@@ -114,12 +114,24 @@ class ConfigRepository(private val context: Context) {
         }
     }
 
+    fun broadcastConfigToSystemServer() {
+        try {
+            val intent = android.content.Intent(me.pj.jqb.data.receiver.AuditLogReceiver.ACTION_CONFIG_UPDATED).apply {
+                putExtra("config_json", getRawConfigJson())
+            }
+            context.sendBroadcast(intent)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     private fun notifyConfigChanged() {
         try {
             context.contentResolver.notifyChange(
                 Uri.parse("content://me.pj.jqb.provider.config/rules"),
                 null
             )
+            broadcastConfigToSystemServer()
         } catch (e: Exception) {
             e.printStackTrace()
         }

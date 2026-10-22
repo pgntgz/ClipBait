@@ -1,16 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Scope is strictly the Android System Framework (system_server).
+         In Vector / LSPosed, user only checks 'Android 系统' once.
+         No need to ever add or remove individual apps in Vector, and no reboots needed! -->
     <string-array name="xposed_scope">
-        <item>com.tencent.mobileqq</item>
-        <item>com.tencent.mm</item>
-        <item>com.taobao.taobao</item>
-        <item>com.xunmeng.pinduoduo</item>
-        <item>com.jingdong.app.mall</item>
-        <item>com.ss.android.ugc.aweme</item>
-        <item>com.kuaishou.nebula</item>
-        <item>com.zhihu.android</item>
-        <item>com.sina.weibo</item>
-        <item>tv.danmaku.bili</item>
-        <item>com.coolapk.market</item>
+        <item>android</item>
     </string-array>
 </resources>

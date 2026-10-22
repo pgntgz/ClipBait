@@ -25,12 +25,17 @@ class XposedEntry : IXposedHookLoadPackage {
             return
         }
 
-        // 2. Ignore system core framework
-        if (packageName == "android" || packageName == "com.android.systemui") {
+        // 2. Intercept System Framework (system_server)
+        if (packageName == "android") {
+            SystemServerHook.init(lpparam)
             return
         }
 
-        // 3. Initialize clipboard hook for target app
+        if (packageName == "com.android.systemui") {
+            return
+        }
+
+        // 3. Fallback client-side hook if scoped
         ClipboardHook.init(lpparam)
     }
 }

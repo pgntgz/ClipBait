@@ -20,7 +20,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -79,10 +81,21 @@ fun AppRulesScreen(viewModel: MainViewModel) {
         }
     }
 
+    var showGuide by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("应用规则", style = MaterialTheme.typography.titleLarge) },
+                actions = {
+                    IconButton(onClick = { showGuide = !showGuide }) {
+                        Icon(
+                            imageVector = Icons.Outlined.Info,
+                            contentDescription = "模式说明",
+                            tint = if (showGuide) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
@@ -94,6 +107,31 @@ fun AppRulesScreen(viewModel: MainViewModel) {
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            // Mode Guide Card (Toggleable)
+            if (showGuide) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "模式区别说明",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        ModeHelpItem(title = "直通", desc = "原样放行，完全不拦截。")
+                        ModeHelpItem(title = "智能", desc = "平时放行粘贴。但应用在切台启动（onResume）或后台偷读时自动拦截。")
+                        ModeHelpItem(title = "伪装", desc = "无论怎么读，均喂给应用一段无关的正常短语，搞乱客群画像。")
+                        ModeHelpItem(title = "阻断", desc = "坚决不给。直接返回空，应用永远读不到任何剪切板。")
+                    }
+                }
+            }
             // Search Input
             OutlinedTextField(
                 value = searchQuery,
@@ -284,5 +322,34 @@ fun DefaultAppIcon() {
                 tint = MaterialTheme.colorScheme.outline
             )
         }
+    }
+}
+
+@Composable
+fun ModeHelpItem(title: String, desc: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Surface(
+            shape = RoundedCornerShape(4.dp),
+            color = MaterialTheme.colorScheme.primaryContainer,
+            modifier = Modifier.padding(top = 2.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = desc,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

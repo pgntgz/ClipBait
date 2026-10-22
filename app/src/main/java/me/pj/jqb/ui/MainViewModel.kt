@@ -145,4 +145,25 @@ class MainViewModel : ViewModel() {
             dao.clearAll()
         }
     }
+
+    fun insertTestAuditRecord() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val samples = listOf(
+                Triple("com.taobao.taobao", "淘宝", "SPOOFED"),
+                Triple("com.tencent.mobileqq", "QQ", "BLOCKED"),
+                Triple("com.xunmeng.pinduoduo", "拼多多", "SPOOFED")
+            )
+            val sample = samples.random()
+            dao.insert(
+                AuditRecord(
+                    packageName = sample.first,
+                    appName = sample.second,
+                    timestamp = System.currentTimeMillis(),
+                    action = sample.third,
+                    triggerReason = "切台/启动偷读 (onResume)",
+                    spoofedPayload = if (sample.third == "SPOOFED") "今天天气挺凉快，适合出门散步" else null
+                )
+            )
+        }
+    }
 }

@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.VerifiedUser
@@ -77,6 +78,12 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
             TopAppBar(
                 title = { Text("光荣榜", style = MaterialTheme.typography.titleLarge) },
                 actions = {
+                    IconButton(onClick = { viewModel.insertTestAuditRecord() }) {
+                        Icon(
+                            imageVector = Icons.Outlined.Science,
+                            contentDescription = "模拟测试记录"
+                        )
+                    }
                     if (records.isNotEmpty()) {
                         IconButton(onClick = { viewModel.clearAuditLogs() }) {
                             Icon(
@@ -230,9 +237,17 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                text = "暂无剪切板探针行为记录",
+                                text = "暂无被捕获的偷读行为",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "已部署全局系统框架。当应用在唤醒切台或后台偷读剪切板时，会在此实时记录。\n可点击右上角图标模拟一条测试日志。",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.outline
+                                color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.padding(horizontal = 24.dp)
                             )
                         }
                     }

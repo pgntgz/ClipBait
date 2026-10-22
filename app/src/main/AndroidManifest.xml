@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
+    <application
+        android:name=".ClipBoxApp"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ClipBox">
+
+        <!-- Xposed / Vector Module Metadata -->
+        <meta-data
+            android:name="xposedmodule"
+            android:value="true" />
+        <meta-data
+            android:name="xposeddescription"
+            android:value="纯粹安静的剪切板隐私控制，智能放行用户主动粘贴，阻断与噪点伪装应用偷读。" />
+        <meta-data
+            android:name="xposedminversion"
+            android:value="82" />
+        <meta-data
+            android:name="xposedscope"
+            android:resource="@array/xposed_scope" />
+
+        <!-- Activity Entry -->
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.ClipBox">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Audit Log ContentProvider (For hooked target apps to report Wall of Shame events) -->
+        <provider
+            android:name=".data.provider.AuditLogProvider"
+            android:authorities="me.pj.jqb.provider.audit"
+            android:exported="true"
+            android:multiprocess="false" />
+
+        <!-- Config ContentProvider (For hooked target apps to fetch latest rules without file permission issues) -->
+        <provider
+            android:name=".data.provider.ConfigProvider"
+            android:authorities="me.pj.jqb.provider.config"
+            android:exported="true"
+            android:multiprocess="false" />
+
+    </application>
+
+</manifest>

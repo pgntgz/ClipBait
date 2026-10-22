@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Clean Shield Vector with Tonal Highlight -->
+    <path
+        android:fillColor="#9EEFFD"
+        android:pathData="M54,28 L34,36 V52 C34,64.3 42.5,75.8 54,79 C65.5,75.8 74,64.3 74,52 V36 L54,28 Z" />
+    <!-- Inner Clipboard Silhouette -->
+    <path
+        android:fillColor="#004F58"
+        android:pathData="M48,42 h12 v4 h-12 z M45,46 h18 v20 h-18 z M47,48 h14 v16 h-14 z" />
+</vector>

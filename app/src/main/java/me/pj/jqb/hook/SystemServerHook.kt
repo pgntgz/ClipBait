@@ -379,6 +379,11 @@ object SystemServerHook {
                 processName = procName,
                 procState = "CACHED_OR_BACKGROUND"
             )
+            lastRead > 0 && elapsedSinceLastRead in 1..1000L -> ProbeContextInfo(
+                triggerType = TriggerType.ASYNC_POLL,
+                processName = procName,
+                procState = "BURST_POLL (${elapsedSinceLastRead}ms)"
+            )
             else -> ProbeContextInfo(
                 triggerType = TriggerType.FOREGROUND_POLL,
                 processName = procName,
@@ -605,16 +610,39 @@ object SystemServerHook {
         Handler(Looper.getMainLooper()).post {
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+                    context.registerReceiver(
+                        receiver,
+                        filter,
+                        "me.pj.jqb.permission.INTERNAL_IPC",
+                        null,
+                        Context.RECEIVER_EXPORTED
+                    )
                 } else {
-                    context.registerReceiver(receiver, filter)
+                    context.registerReceiver(
+                        receiver,
+                        filter,
+                        "me.pj.jqb.permission.INTERNAL_IPC",
+                        null
+                    )
                 }
                 val requestIntent = Intent(AuditLogReceiver.ACTION_REQUEST_CONFIG).apply {
                     setPackage("me.pj.jqb")
                 }
                 safeSendBroadcast(context, requestIntent)
-            } catch (e: Exception) {
-                XposedBridge.log("$TAG setupConfigReceiver error: ${e.message}")
+            } catch (_: Throwable) {
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+                    } else {
+                        context.registerReceiver(receiver, filter)
+                    }
+                    val requestIntent = Intent(AuditLogReceiver.ACTION_REQUEST_CONFIG).apply {
+                        setPackage("me.pj.jqb")
+                    }
+                    safeSendBroadcast(context, requestIntent)
+                } catch (e: Exception) {
+                    XposedBridge.log("$TAG setupConfigReceiver error: ${e.message}")
+                }
             }
         }
     }

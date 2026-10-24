@@ -10,6 +10,12 @@
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
+    <!-- Protected permission for internal IPC between system_server and ClipBait -->
+    <permission
+        android:name="me.pj.jqb.permission.INTERNAL_IPC"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="me.pj.jqb.permission.INTERNAL_IPC" />
+
     <application
         android:name=".ClipBoxApp"
         android:allowBackup="true"
@@ -61,6 +67,7 @@
         <!-- BroadcastReceiver to receive logs and config requests from system_server -->
         <receiver
             android:name=".data.receiver.AuditLogReceiver"
+            android:permission="me.pj.jqb.permission.INTERNAL_IPC"
             android:exported="true">
             <intent-filter>
                 <action android:name="me.pj.jqb.ACTION_LOG" />

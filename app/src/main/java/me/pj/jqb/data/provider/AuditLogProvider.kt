@@ -21,12 +21,15 @@ class AuditLogProvider : ContentProvider() {
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
         if (method == "log_intercept" && extras != null) {
             val packageName = extras.getString("package_name") ?: return null
+            val ctx = context ?: return null
+            val callingPkg = callingPackage
+            if (callingPkg != null && callingPkg != packageName && callingPkg != "android" && callingPkg != ctx.packageName) {
+                return null
+            }
             val appName = extras.getString("app_name") ?: packageName
             val action = extras.getString("action") ?: "BLOCKED"
             val triggerReason = extras.getString("trigger_reason") ?: "UNKNOWN"
             val spoofedPayload = extras.getString("spoofed_payload")
-
-            val ctx = context ?: return null
             providerScope.launch {
                 try {
                     val db = AppDatabase.getInstance(ctx)

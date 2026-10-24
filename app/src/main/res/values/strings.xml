@@ -1,16 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">ClipBox</string>
-    <string name="nav_audit">光荣榜</string>
-    <string name="nav_rules">应用规则</string>
-    <string name="nav_config">配置与订阅</string>
-    <string name="nav_settings">设置</string>
-
-    <string name="action_direct">直通</string>
-    <string name="action_smart">智能拦截</string>
-    <string name="action_spoof">噪点伪装</string>
-    <string name="action_block">彻底阻断</string>
-
-    <string name="status_active">模块已激活</string>
-    <string name="status_inactive">模块未激活 (请在 LSPosed / Vector 中启用)</string>
+    <string name="app_name">ClipBait</string>
+    <!-- Shown in LSPosed / Vector module list. Keep it to one or two short sentences. -->
+    <string name="xposed_description">Feed bait to apps that snoop on your clipboard. Normal paste works as usual; sneaky background reads get empty data or random decoys. Scope: System Framework only.</string>
 </resources>

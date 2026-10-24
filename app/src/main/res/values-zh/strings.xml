@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ClipBait</string>
+    <!-- Shown in LSPosed / Vector module list. Keep it to one or two short sentences. -->
+    <string name="xposed_description">给乱翻剪贴板的应用下点饵。你自己粘贴照常用，它偷偷读就给空的或塞段怪话。作用域只勾「系统框架」。</string>
+</resources>

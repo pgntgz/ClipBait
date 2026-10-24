@@ -6,6 +6,9 @@
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
 
     <application
         android:name=".ClipBoxApp"
@@ -22,7 +25,7 @@
             android:value="true" />
         <meta-data
             android:name="xposeddescription"
-            android:value="纯粹安静的剪切板隐私控制，智能放行用户主动粘贴，阻断与噪点伪装应用偷读。" />
+            android:value="@string/xposed_description" />
         <meta-data
             android:name="xposedminversion"
             android:value="82" />
@@ -41,18 +44,18 @@
             </intent-filter>
         </activity>
 
-        <!-- Audit Log ContentProvider (For hooked target apps to report Wall of Shame events) -->
+        <!-- Audit Log ContentProvider -->
         <provider
             android:name=".data.provider.AuditLogProvider"
             android:authorities="me.pj.jqb.provider.audit"
-            android:exported="true"
+            android:exported="false"
             android:multiprocess="false" />
 
-        <!-- Config ContentProvider (For hooked target apps to fetch latest rules without file permission issues) -->
+        <!-- Config ContentProvider -->
         <provider
             android:name=".data.provider.ConfigProvider"
             android:authorities="me.pj.jqb.provider.config"
-            android:exported="true"
+            android:exported="false"
             android:multiprocess="false" />
 
         <!-- BroadcastReceiver to receive logs and config requests from system_server -->
@@ -62,6 +65,7 @@
             <intent-filter>
                 <action android:name="me.pj.jqb.ACTION_LOG" />
                 <action android:name="me.pj.jqb.ACTION_REQUEST_CONFIG" />
+                <action android:name="me.pj.jqb.ACTION_SYSTEM_HOOK_ALIVE" />
             </intent-filter>
         </receiver>
 

@@ -20,6 +20,10 @@ class ConfigProvider : ContentProvider() {
         when (method) {
             "get_config_for_package" -> {
                 val packageName = arg ?: return null
+                val callingPkg = callingPackage
+                if (callingPkg != null && callingPkg != packageName && callingPkg != "android" && callingPkg != ctx.packageName) {
+                    return null
+                }
                 val matchedRule = config.rules.firstOrNull { it.packageNames.contains(packageName) }
                 val actionKey = matchedRule?.action ?: config.settings.defaultAction
                 val decoyId = matchedRule?.decoyId
@@ -37,9 +41,6 @@ class ConfigProvider : ContentProvider() {
                         putStringArrayList("decoy_pool", ArrayList(decoy.pool))
                     }
                 }
-            }
-            "is_module_active" -> {
-                return Bundle().apply { putBoolean("active", true) }
             }
         }
         return super.call(method, arg, extras)

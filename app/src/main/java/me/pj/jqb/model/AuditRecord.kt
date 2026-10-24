@@ -1,9 +1,11 @@
 package me.pj.jqb.model
 
+import androidx.compose.runtime.Immutable
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+@Immutable
 @Entity(
     tableName = "audit_records",
     indices = [
@@ -18,7 +20,11 @@ data class AuditRecord(
     val packageName: String,
     val appName: String,
     val timestamp: Long = System.currentTimeMillis(),
-    val action: String, // BLOCKED, SPOOFED, SMART_PASSED
-    val triggerReason: String, // CONTEXT_MENU_PASTE, LIFECYCLE_RESUME, WINDOW_FOCUS, ASYNC_POLL, etc.
-    val spoofedPayload: String? = null
+    val action: String, // BLOCKED, SPOOFED
+    val triggerReason: String, // TriggerType.code
+    val spoofedPayload: String? = null,
+    val callingPid: Int = 0,
+    val callingUid: Int = 0,
+    val processName: String = "",
+    val procState: String = ""
 )

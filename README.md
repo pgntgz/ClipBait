@@ -1,103 +1,53 @@
-# ClipBox (PJ-jqb)
+# ClipBait
 
-专为 AOSP / EvoX / crDroid 深度定制的纯粹剪切板隐私控制模块（LSPosed / Vector 支持）。
+## 基础介绍
+这是一个给喜欢乱翻剪贴板的软件下点饵的 Xposed 插件。
 
-针对国产应用普遍存在的在 `onResume`、窗口获焦（`onWindowFocusChanged`）或定时轮询中无感偷读剪切板（用于淘口令分析、防关联追踪及客群画像），提供**静默智能拦截**与**噪点伪装**能力。
+国内不少应用（电商、短视频、带统计 SDK 的工具等）有个坏毛病：只要一切回前台或者躲在后台推送进程里，不管你有没有点粘贴，先顺手把剪贴板翻一遍。直接拦空有时候会被它们察觉，不如干脆塞点假词、百科或者怪话糊弄过去，顺便在光荣榜里给它们记上一笔。
 
----
+## 使用
+和普通插件差不多，但是你**只需要在 LSPosed / Vector 里勾上「系统框架 (android)」即可，无需勾选其他任何软件**。
 
-## 核心特性
+- **支持环境**：Android 10 ~ 15（API 29+），LSPosed / Vector 等现代 Xposed 框架
+- **作用域**：仅 `系统框架 (android)`
+- **热生效**：首次激活模块需要重启一次手机；之后无论是新装应用还是修改拦截规则、抽词库，都是当场生效，不用再重启。
+- **输入法兼容**：自动识别并放行系统当前激活的输入法（如 Fcitx5、Gboard 等），平时用输入法剪贴板粘贴不受影响。
 
-- **双通道静默鉴别（Heuristic Detection）**：
-  - 自动识别原生控件长按菜单粘贴（`onTextContextMenuItem`）、界面控件点击粘贴（`performClick`）以及近程手势窗口（Trust Window）。
-  - 对应用切台唤醒、窗口获焦、后台轮询等恶意探针行为进行精确拦截或噪点伪装。
-  - **Fcitx5（小企鹅输入法 5）天然契合**：日常输入法候选栏/剪切板历史粘贴走 `InputConnection.commitText` 原生通道，宿主应用完全无法察觉。
-- **客群反画像噪点伪装（Camouflage / Noise Injection）**：
-  - 电商及追踪类应用读取剪切板时，下发自然日常短语或随机 Wikipedia 词条，打乱其客群标签提取算法。
-- **光荣榜（Wall of Shame 审计系统）**：
-  - 实时记录每次偷读事件的触发诱因（如 `Lifecycle: onResume`、`Focus: onWindowFocus`）、时间、阻断类型及喂给对端的噪点内容。
-  - 提供偷读频次排行，抓出最肆无忌惮的应用。
-- **Sing-box 风格声明式规则模型**：
-  - 采用声明式、强类型的 JSON 配置架构（`settings`, `rules`, `decoys`, `subscriptions`）。
-  - 界面设置与 JSON 配置文本实时双向同步，支持规则直接导入与导出。
-- **纯粹 Material Design 3 视觉系统**：
-  - 绝无任何 Emoji。
-  - 全面使用官方 Google Material Symbols / Material Icons。
-  - 支持 Monet 动态色彩提取、Surface Tonal Elevation 色阶与 8dp 栅格化系统。
+## 功能
+针对每个应用有四个模式可以选（也可以用内置的「一键揪出毒瘤」按包名和内嵌广告/统计 SDK 自动筛一遍）：
 
----
+- **放行**：不管，跟没装插件一样。
+- **智能**：你自己手动点粘贴（长按粘贴菜单、点粘贴按钮）照常放行；应用刚切回前台头两秒自动偷读、或者躲在后台静默读，直接拦下（可设回传空剪贴板或塞假词）。适合微信、QQ 等日常还得正常聊天的软件。
+- **伪装**：不管什么时候来读，都从词库里随机抽一句假话塞给它（带防连读穿帮保鲜期，不怕应用一秒内连读校验）。内置联网抽词（维基百科、伪基大典、抽象世界 `chouxiang.world`）和本地生成（弱智吧暴论、假淘口令、废话文学、假报错栈），也支持自己手写。
+- **阻断**：永远返回空剪贴板，并掐掉剪贴板变动监听。
 
-## 声明式配置示例 (`config.json`)
+另外附带一个**光荣榜**：
+- 统计「读取次数积分榜」和可选的「最爱读取积分榜」（结合应用真实前台使用时长，揪出没用几分钟却天天摸兜的应用）。
+- 点开单条记录可以看到具体是主进程还是 `:push` 这种子进程伸的手、当时塞了什么假话，顺便给前三名（或前排打平时的第四名「勒克莱尔奖」）放个彩带礼花。
 
-```json
-{
-  "$schema": "https://pj-jqb.local/schema/v1.json",
-  "version": 1,
-  "settings": {
-    "default_action": "direct",
-    "smart_detect": {
-      "enabled": true,
-      "trust_window_ms": 300,
-      "fallback_action": "block"
-    },
-    "audit_log": {
-      "enabled": true,
-      "retention_days": 15
-    }
-  },
-  "decoys": [
-    {
-      "id": "e_commerce_noise",
-      "name": "电商客群污染噪点",
-      "strategy": "random_natural",
-      "pool": [
-        "今天天气挺凉快，适合出门散步",
-        "会议纪要已发送至工作邮箱，请查收",
-        "好的，晚点联系",
-        "https://zh.wikipedia.org/wiki/Special:Random"
-      ]
-    }
-  ],
-  "rules": [
-    {
-      "package_name": [
-        "com.taobao.taobao",
-        "com.xunmeng.pinduoduo",
-        "com.jingdong.app.mall"
-      ],
-      "action": "spoof",
-      "decoy": "e_commerce_noise",
-      "description": "主流电商平台强制噪点伪装"
-    },
-    {
-      "package_name": [
-        "com.tencent.mobileqq",
-        "com.tencent.mm"
-      ],
-      "action": "smart",
-      "smart_fallback": "block",
-      "description": "即时通讯应用智能放行，非主动读取全阻断"
-    }
-  ],
-  "subscriptions": []
-}
-```
+## 开发
+这个项目几乎完全由 AI 构建，如果认为有什么地方有不足，可以提出来让我的 AI 继续改。
+
+- 作者 GitHub：[@pgntgz](https://github.com/pgntgz)
+- 源码仓库：[https://github.com/pgntgz/ClipBait](https://github.com/pgntgz/ClipBait)
+- 问题反馈：[Issues](https://github.com/pgntgz/ClipBait/issues)
+- Matrix：`@pgntgz:tchncs.de`
+- 邮箱：`2f4fsilg6@mozmail.com`
 
 ---
 
-## 编译与安装
+## English Overview
 
-### 1. 编译 Debug APK
-```bash
-./gradlew assembleDebug
-```
-产物位置：`app/build/outputs/apk/debug/app-debug.apk`
+**ClipBait** is an Xposed (LSPosed / Vector) module that intercepts sneaky clipboard reads in `system_server` (`ClipboardService`) and feeds nosy apps empty data or random decoy phrases.
 
-### 2. 安装与激活
-```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-```
-1. 打开 LSPosed / Vector 管理器；
-2. 在模块列表中找到 **ClipBox** 并开启；
-3. 勾选推荐作用域或手动勾选需要保护的目标应用；
-4. 软重启手机或强行停止对应应用即可生效。
+- **Scope**: **System Framework (`android`) only**. Do not hook individual target apps. Rules and decoy pools update live without rebooting.
+- **4 Modes per App**:
+  - **Allow**: Unrestricted access.
+  - **Smart**: Allows genuine user-initiated pastes while blocking or spoofing automatic reads on `onResume` / window focus or silent background polling.
+  - **Spoof**: Always returns a random decoy entry from the pool (with configurable per-app TTL cache to defeat burst-read consistency checks).
+  - **Block**: Always returns an empty clipboard and silences clipboard listeners.
+- **Hall of Fame**: Tracks top clipboard snoopers by total count or foreground usage density, complete with subprocess attribution and celebratory confetti.
+- **Language**: Supports both Chinese and English (`Settings -> Language`).
+
+## License
+GPL-3.0

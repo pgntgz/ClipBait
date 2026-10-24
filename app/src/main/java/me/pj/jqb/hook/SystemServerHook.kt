@@ -1,13 +1,17 @@
 package me.pj.jqb.hook
 
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Binder
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.UserHandle
+import android.util.AtomicFile
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
@@ -15,7 +19,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage
 import kotlinx.serialization.json.Json
 import me.pj.jqb.data.receiver.AuditLogReceiver
 import me.pj.jqb.model.ConfigModel
-import me.pj.jqb.model.RuleConfig
+import me.pj.jqb.model.TriggerType
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
@@ -26,12 +30,30 @@ object SystemServerHook {
     @Volatile
     private var systemContext: Context? = null
 
-    // In-memory cache of rules and settings inside system_server
     @Volatile
     private var currentConfig: ConfigModel = ConfigModel()
 
+    @Volatile
+    private var currentTopPackage: String = ""
+
     // Tracks when an application's activity was resumed to catch onResume sneak probes
     private val appResumeTimeMap = ConcurrentHashMap<String, Long>()
+
+    // Tracks last clipboard read time per package to identify burst/polling patterns
+    private val appLastReadTimeMap = ConcurrentHashMap<String, Long>()
+
+    // Debounces audit log broadcasts so multi-read bursts within 600ms produce 1 clean entry
+    private val lastReportTimeMap = ConcurrentHashMap<String, Long>()
+
+    // Caches generated decoy ClipData per package for 1500ms so burst probes get consistent text
+    private data class CachedDecoy(val clipData: ClipData?, val timestamp: Long)
+    private val decoyCacheMap = ConcurrentHashMap<String, CachedDecoy>()
+
+    // Cache resolved app labels in system_server
+    private val appLabelCache = ConcurrentHashMap<String, String>()
+
+    // Cache of verified input method packages to unconditionally bypass
+    private val imePackageSet = ConcurrentHashMap.newKeySet<String>()
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -42,7 +64,7 @@ object SystemServerHook {
         val classLoader = lpparam.classLoader
         XposedBridge.log("$TAG Initializing in system_server...")
 
-        // 1. Hook Activity Lifecycle in system_server to track onResume timestamps
+        // 1. Hook Activity Lifecycle across Android 11-16 (ActivityTaskManagerService & ActivityClientController)
         hookActivityResumeTracking(classLoader)
 
         // 2. Hook ClipboardService
@@ -50,34 +72,48 @@ object SystemServerHook {
     }
 
     private fun hookActivityResumeTracking(classLoader: ClassLoader) {
+        val recordActivityResume: (Any?) -> Unit = { activityRecord ->
+            if (activityRecord != null) {
+                try {
+                    val pkg = (XposedHelpers.getObjectField(activityRecord, "packageName") as? String)
+                        ?: (XposedHelpers.getObjectField(activityRecord, "mActivityComponent") as? ComponentName)?.packageName
+                        ?: (XposedHelpers.callMethod(activityRecord, "getPackageName") as? String)
+                    val userId = try {
+                        XposedHelpers.getIntField(activityRecord, "mUserId")
+                    } catch (_: Throwable) {
+                        0
+                    }
+                    if (!pkg.isNullOrEmpty()) {
+                        currentTopPackage = pkg
+                        val now = System.currentTimeMillis()
+                        appResumeTimeMap["$userId:$pkg"] = now
+                        appResumeTimeMap[pkg] = now
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+        }
+
+        // Hook 1: Android 12-16 ActivityClientController.activityResumed(IBinder token, ...)
         try {
-            // AOSP ActivityRecord: resumeKeyDispatching() or onWindowsVisible() or setResumedActivityUncheckLocked
-            val atmClass = XposedHelpers.findClassIfExists(
-                "com.android.server.wm.ActivityTaskManagerService",
+            val accClass = XposedHelpers.findClassIfExists(
+                "com.android.server.wm.ActivityClientController",
                 classLoader
             )
-            if (atmClass != null) {
-                // Hook activityResumed(IBinder token, ...)
-                for (method in atmClass.declaredMethods) {
+            val arClass = XposedHelpers.findClassIfExists(
+                "com.android.server.wm.ActivityRecord",
+                classLoader
+            )
+            if (accClass != null && arClass != null) {
+                for (method in accClass.declaredMethods) {
                     if (method.name == "activityResumed") {
                         XposedBridge.hookMethod(method, object : XC_MethodHook() {
                             override fun beforeHookedMethod(param: MethodHookParam) {
                                 try {
-                                    // Extract top activity info if possible
                                     val token = param.args.firstOrNull() ?: return
-                                    val topActivity = XposedHelpers.callStaticMethod(
-                                        XposedHelpers.findClass("com.android.server.wm.ActivityRecord", classLoader),
-                                        "forTokenLocked",
-                                        token
-                                    )
-                                    if (topActivity != null) {
-                                        val pkg = XposedHelpers.getObjectField(topActivity, "packageName") as? String
-                                        if (!pkg.isNullOrEmpty()) {
-                                            appResumeTimeMap[pkg] = System.currentTimeMillis()
-                                        }
-                                    }
-                                } catch (t: Throwable) {
-                                    // Silently continue
+                                    val topActivity = XposedHelpers.callStaticMethod(arClass, "forTokenLocked", token)
+                                    recordActivityResume(topActivity)
+                                } catch (_: Throwable) {
                                 }
                             }
                         })
@@ -85,7 +121,28 @@ object SystemServerHook {
                 }
             }
         } catch (t: Throwable) {
-            XposedBridge.log("$TAG Hook Activity tracking warning: ${t.message}")
+            XposedBridge.log("$TAG ActivityClientController hook note: ${t.message}")
+        }
+
+        // Hook 2: ActivityTaskManagerService (setLastResumedActivityUncheckLocked / activityResumed)
+        try {
+            val atmClass = XposedHelpers.findClassIfExists(
+                "com.android.server.wm.ActivityTaskManagerService",
+                classLoader
+            )
+            if (atmClass != null) {
+                for (method in atmClass.declaredMethods) {
+                    if (method.name == "setLastResumedActivityUncheckLocked" || method.name == "setResumedActivityUncheckLocked") {
+                        XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                            override fun beforeHookedMethod(param: MethodHookParam) {
+                                recordActivityResume(param.args.firstOrNull())
+                            }
+                        })
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            XposedBridge.log("$TAG ActivityTaskManagerService hook note: ${t.message}")
         }
     }
 
@@ -98,7 +155,6 @@ object SystemServerHook {
             return
         }
 
-        // Capture Context from ClipboardService constructor
         XposedHelpers.findAndHookConstructor(
             clipboardServiceClass,
             Context::class.java,
@@ -113,7 +169,6 @@ object SystemServerHook {
             }
         )
 
-        // Classes to hook: ClipboardService and inner ClipboardImpl (which implements IClipboard.Stub in Android 13+)
         val classesToHook = mutableListOf<Class<*>>(clipboardServiceClass)
         try {
             val implClass = XposedHelpers.findClass(
@@ -121,8 +176,7 @@ object SystemServerHook {
                 classLoader
             )
             classesToHook.add(implClass)
-        } catch (t: Throwable) {
-            // Older AOSP directly has methods in ClipboardService
+        } catch (_: Throwable) {
         }
 
         for (targetClass in classesToHook) {
@@ -139,36 +193,73 @@ object SystemServerHook {
                             val pkg = param.args.firstOrNull() as? String ?: return
                             if (shouldBypassPackage(pkg)) return
 
+                            val callingPid = Binder.getCallingPid()
+                            val callingUid = Binder.getCallingUid()
                             val action = getEffectiveAction(pkg)
-                            val triggerReason = detectTriggerReason(pkg)
+                            if (action == "direct") return
+
+                            val probeContext = analyzeProbeContext(pkg, callingPid, callingUid, isReadAction = true)
 
                             when (action) {
                                 "block" -> {
                                     param.result = null
-                                    reportIntercept(pkg, "BLOCKED", triggerReason, null)
+                                    reportIntercept(
+                                        pkg = pkg,
+                                        action = "BLOCKED",
+                                        triggerCode = probeContext.triggerType.code,
+                                        payload = null,
+                                        callingPid = callingPid,
+                                        callingUid = callingUid,
+                                        processName = probeContext.processName,
+                                        procState = probeContext.procState
+                                    )
                                 }
                                 "spoof" -> {
-                                    val decoy = DecoyGenerator.generateClipData("random_natural", null)
+                                    val decoy = getOrCreateConsistentDecoy(pkg)
                                     param.result = decoy
                                     val text = decoy?.getItemAt(0)?.text?.toString()
-                                    reportIntercept(pkg, "SPOOFED", triggerReason, text)
+                                    reportIntercept(
+                                        pkg = pkg,
+                                        action = "SPOOFED",
+                                        triggerCode = probeContext.triggerType.code,
+                                        payload = text,
+                                        callingPid = callingPid,
+                                        callingUid = callingUid,
+                                        processName = probeContext.processName,
+                                        procState = probeContext.procState
+                                    )
                                 }
                                 "smart" -> {
-                                    val isSneakProbe = isAppInSneakWindow(pkg)
+                                    val isSneakProbe = isAppInSneakWindow(pkg, probeContext)
                                     if (isSneakProbe) {
-                                        // App just resumed or in background: sneak probe!
-                                        val fallback = currentConfig.settings.smartDetect.fallbackAction
+                                        val fallback = getSmartFallbackForPackage(pkg)
                                         if (fallback == "spoof") {
-                                            val decoy = DecoyGenerator.generateClipData("random_natural", null)
+                                            val decoy = getOrCreateConsistentDecoy(pkg)
                                             param.result = decoy
                                             val text = decoy?.getItemAt(0)?.text?.toString()
-                                            reportIntercept(pkg, "SPOOFED", "切台/启动无感偷读 (onResume)", text)
+                                            reportIntercept(
+                                                pkg = pkg,
+                                                action = "SPOOFED",
+                                                triggerCode = probeContext.triggerType.code,
+                                                payload = text,
+                                                callingPid = callingPid,
+                                                callingUid = callingUid,
+                                                processName = probeContext.processName,
+                                                procState = probeContext.procState
+                                            )
                                         } else {
                                             param.result = null
-                                            reportIntercept(pkg, "BLOCKED", "切台/启动无感偷读 (onResume)", null)
+                                            reportIntercept(
+                                                pkg = pkg,
+                                                action = "BLOCKED",
+                                                triggerCode = probeContext.triggerType.code,
+                                                payload = null,
+                                                callingPid = callingPid,
+                                                callingUid = callingUid,
+                                                processName = probeContext.processName,
+                                                procState = probeContext.procState
+                                            )
                                         }
-                                    } else {
-                                        // Legitimate user paste after using app, pass through!
                                     }
                                 }
                             }
@@ -187,8 +278,11 @@ object SystemServerHook {
                                 param.result = false
                             } else if (action == "spoof") {
                                 param.result = true
-                            } else if (action == "smart" && isAppInSneakWindow(pkg)) {
-                                param.result = currentConfig.settings.smartDetect.fallbackAction != "block"
+                            } else if (action == "smart") {
+                                val probeContext = analyzeProbeContext(pkg, Binder.getCallingPid(), Binder.getCallingUid(), isReadAction = false)
+                                if (isAppInSneakWindow(pkg, probeContext)) {
+                                    param.result = getSmartFallbackForPackage(pkg) != "block"
+                                }
                             }
                         }
                     })
@@ -205,12 +299,31 @@ object SystemServerHook {
                                 param.result = null
                             } else if (action == "spoof") {
                                 param.result = DecoyGenerator.generateClipDescription()
-                            } else if (action == "smart" && isAppInSneakWindow(pkg)) {
-                                if (currentConfig.settings.smartDetect.fallbackAction == "block") {
-                                    param.result = null
-                                } else {
-                                    param.result = DecoyGenerator.generateClipDescription()
+                            } else if (action == "smart") {
+                                val probeContext = analyzeProbeContext(pkg, Binder.getCallingPid(), Binder.getCallingUid(), isReadAction = false)
+                                if (isAppInSneakWindow(pkg, probeContext)) {
+                                    if (getSmartFallbackForPackage(pkg) == "block") {
+                                        param.result = null
+                                    } else {
+                                        param.result = DecoyGenerator.generateClipDescription()
+                                    }
                                 }
+                            }
+                        }
+                    })
+                }
+                "addPrimaryClipChangedListener" -> {
+                    XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                        override fun beforeHookedMethod(param: MethodHookParam) {
+                            val pkg = (param.args.getOrNull(1) as? String)
+                                ?: (param.args.firstOrNull() as? String)
+                                ?: return
+                            if (shouldBypassPackage(pkg)) return
+
+                            val action = getEffectiveAction(pkg)
+                            if (action == "block") {
+                                // Block rogue app from registering background clipboard change listeners
+                                param.result = null
                             }
                         }
                     })
@@ -219,13 +332,157 @@ object SystemServerHook {
         }
     }
 
+    private data class ProbeContextInfo(
+        val triggerType: TriggerType,
+        val processName: String,
+        val procState: String
+    )
+
+    private fun analyzeProbeContext(
+        pkg: String,
+        callingPid: Int,
+        callingUid: Int,
+        isReadAction: Boolean = true
+    ): ProbeContextInfo {
+        val now = System.currentTimeMillis()
+        val userId = if (callingUid > 0) callingUid / 100000 else 0
+        val userPkgKey = "$userId:$pkg"
+
+        val lastResume = appResumeTimeMap[userPkgKey] ?: appResumeTimeMap[pkg] ?: 0L
+        val lastRead = if (isReadAction) {
+            appLastReadTimeMap.put(userPkgKey, now) ?: appLastReadTimeMap.put(pkg, now) ?: 0L
+        } else {
+            appLastReadTimeMap[userPkgKey] ?: appLastReadTimeMap[pkg] ?: 0L
+        }
+        val elapsedSinceResume = now - lastResume
+        val elapsedSinceLastRead = now - lastRead
+
+        val procName = resolveProcessName(callingPid, pkg)
+        val isSubProcess = procName.contains(":")
+
+        // Check if the calling process is physically in the foreground (supports fullscreen, split-screen, and floating windows!)
+        val isForegroundApp = isProcessForeground(callingUid, pkg)
+
+        return when {
+            isSubProcess -> ProbeContextInfo(
+                triggerType = TriggerType.BACKGROUND_SILENT,
+                processName = procName,
+                procState = "BACKGROUND_SUBPROCESS"
+            )
+            elapsedSinceResume in 0..currentConfig.settings.smartDetect.resumeWindowMs -> ProbeContextInfo(
+                triggerType = TriggerType.LIFECYCLE_RESUME,
+                processName = procName,
+                procState = "TOP_ON_RESUME (${elapsedSinceResume}ms)"
+            )
+            !isForegroundApp -> ProbeContextInfo(
+                triggerType = TriggerType.BACKGROUND_SILENT,
+                processName = procName,
+                procState = "CACHED_OR_BACKGROUND"
+            )
+            else -> ProbeContextInfo(
+                triggerType = TriggerType.FOREGROUND_POLL,
+                processName = procName,
+                procState = "TOP_ACTIVE"
+            )
+        }
+    }
+
+    private fun isProcessForeground(callingUid: Int, pkg: String): Boolean {
+        if (currentTopPackage == pkg) return true
+        val ctx = systemContext ?: return currentTopPackage.isEmpty()
+        if (callingUid <= 0) return currentTopPackage.isEmpty()
+        // We are on the app's binder thread; AMS checks the *caller's* permission,
+        // so drop to system identity or the query is rejected.
+        val token = Binder.clearCallingIdentity()
+        return try {
+            val am = ctx.getSystemService(android.app.ActivityManager::class.java) ?: return currentTopPackage.isEmpty()
+            val importance = XposedHelpers.callMethod(am, "getUidImportance", callingUid) as? Int
+                ?: return currentTopPackage.isEmpty()
+            importance <= android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE
+        } catch (_: Throwable) {
+            currentTopPackage.isEmpty()
+        } finally {
+            Binder.restoreCallingIdentity(token)
+        }
+    }
+
+    private fun resolveProcessName(pid: Int, fallbackPkg: String): String {
+        if (pid <= 0) return fallbackPkg
+        try {
+            val cmdlineFile = File("/proc/$pid/cmdline")
+            if (cmdlineFile.exists()) {
+                val raw = cmdlineFile.readBytes()
+                val end = raw.indexOf(0.toByte()).let { if (it >= 0) it else raw.size }
+                val name = String(raw, 0, end, Charsets.UTF_8).trim()
+                if (name.isNotEmpty()) return name
+            }
+        } catch (_: Throwable) {
+        }
+        val ctx = systemContext ?: return fallbackPkg
+        return try {
+            val am = ctx.getSystemService(android.app.ActivityManager::class.java)
+            am?.runningAppProcesses?.firstOrNull { it.pid == pid }?.processName ?: fallbackPkg
+        } catch (_: Throwable) {
+            fallbackPkg
+        }
+    }
+
+    private fun resolveAppName(pkg: String): String {
+        appLabelCache[pkg]?.let { return it }
+        val ctx = systemContext ?: return pkg
+        return try {
+            val pm = ctx.packageManager
+            val appInfo = pm.getApplicationInfo(pkg, 0)
+            val label = pm.getApplicationLabel(appInfo).toString()
+            if (label.isNotBlank()) {
+                appLabelCache[pkg] = label
+                label
+            } else {
+                pkg
+            }
+        } catch (_: Throwable) {
+            pkg
+        }
+    }
+
+    @Volatile
+    private var imeCacheTime = 0L
+
     private fun shouldBypassPackage(pkg: String): Boolean {
-        // System and trusted packages always bypass
-        return pkg == "android" ||
-                pkg == "com.android.systemui" ||
-                pkg == "me.pj.jqb" ||
-                pkg == "org.fcitx.fcitx5.android" || // Fcitx5 IME
-                pkg.contains("inputmethod")
+        if (pkg == "android" ||
+            pkg == "com.android.systemui" ||
+            pkg == "me.pj.jqb"
+        ) {
+            return true
+        }
+        refreshImeCacheIfStale()
+        return imePackageSet.contains(pkg)
+    }
+
+    /**
+     * Only packages that actually register an InputMethod service are trusted.
+     * Name-based guesses ("keyboard", ".input") were removed: any app could name itself that way.
+     * Refreshed at most once a minute so we don't hit PackageManager on every clipboard read.
+     */
+    private fun refreshImeCacheIfStale() {
+        val now = System.currentTimeMillis()
+        if (now - imeCacheTime < 60_000L && imePackageSet.isNotEmpty()) return
+        val ctx = systemContext ?: return
+        imeCacheTime = now
+        val token = Binder.clearCallingIdentity()
+        try {
+            val services = ctx.packageManager.queryIntentServices(Intent("android.view.InputMethod"), 0)
+            val fresh = services.mapNotNull { it.serviceInfo?.packageName }.toSet()
+            if (fresh.isNotEmpty()) {
+                imePackageSet.retainAll(fresh)
+                imePackageSet.addAll(fresh)
+            }
+        } catch (_: Throwable) {
+        } finally {
+            Binder.restoreCallingIdentity(token)
+        }
+        // Fcitx5 always trusted even before the first successful query
+        imePackageSet.add("org.fcitx.fcitx5.android")
     }
 
     private fun getEffectiveAction(pkg: String): String {
@@ -233,37 +490,81 @@ object SystemServerHook {
         return rule?.action ?: currentConfig.settings.defaultAction
     }
 
-    private fun isAppInSneakWindow(pkg: String): Boolean {
-        val lastResume = appResumeTimeMap[pkg] ?: 0L
-        val elapsedSinceResume = System.currentTimeMillis() - lastResume
-        // If app read clipboard within 1500ms of resuming, it is 100% an onResume stealth probe!
-        return elapsedSinceResume in 0..1500L
+    private fun getSmartFallbackForPackage(pkg: String): String {
+        val rule = currentConfig.rules.firstOrNull { it.packageNames.contains(pkg) }
+        return rule?.smartFallback ?: currentConfig.settings.smartDetect.fallbackAction
     }
 
-    private fun detectTriggerReason(pkg: String): String {
-        val lastResume = appResumeTimeMap[pkg] ?: 0L
-        val elapsed = System.currentTimeMillis() - lastResume
-        return if (elapsed in 0..1500L) {
-            "切台/启动偷读 (onResume)"
-        } else {
-            "后台/窗口轮询偷读"
+    private fun getDecoyForPackage(pkg: String) =
+        currentConfig.rules.firstOrNull { it.packageNames.contains(pkg) }?.decoyId?.let { id ->
+            currentConfig.decoys.firstOrNull { it.id == id }
+        } ?: currentConfig.decoys.firstOrNull()
+
+    private fun getOrCreateConsistentDecoy(pkg: String): ClipData? {
+        val now = System.currentTimeMillis()
+        val cacheDuration = currentConfig.settings.smartDetect.decoyCacheMs.coerceIn(0L, 60_000L)
+        val cached = decoyCacheMap[pkg]
+        if (cacheDuration > 0L && cached != null && (now - cached.timestamp) in 0..cacheDuration) {
+            return cached.clipData
         }
+        val decoyConfig = getDecoyForPackage(pkg)
+        val generated = DecoyGenerator.generateClipData(
+            decoyConfig?.strategy,
+            decoyConfig?.pool
+        )
+        if (cacheDuration > 0L) {
+            decoyCacheMap[pkg] = CachedDecoy(generated, now)
+        }
+        return generated
     }
 
-    private fun reportIntercept(pkg: String, action: String, reason: String, payload: String?) {
+    private fun isAppInSneakWindow(pkg: String, probeContext: ProbeContextInfo): Boolean {
+        return probeContext.triggerType == TriggerType.LIFECYCLE_RESUME ||
+                probeContext.triggerType == TriggerType.BACKGROUND_SILENT ||
+                probeContext.triggerType == TriggerType.ASYNC_POLL
+    }
+
+    private fun reportIntercept(
+        pkg: String,
+        action: String,
+        triggerCode: String,
+        payload: String?,
+        callingPid: Int,
+        callingUid: Int,
+        processName: String,
+        procState: String
+    ) {
+        if (!currentConfig.settings.auditLog.enabled) return
         val ctx = systemContext ?: return
+        val now = System.currentTimeMillis()
+        val lastReport = lastReportTimeMap[pkg] ?: 0L
+        if (now - lastReport in 0..600L) {
+            // Suppress duplicate log broadcasts within a 600ms multi-read probe burst
+            return
+        }
+        lastReportTimeMap[pkg] = now
+
+        // Run as system: the label lookup and the cross-user broadcast both need it.
+        val identity = Binder.clearCallingIdentity()
         try {
+            val appName = resolveAppName(pkg)
             val intent = Intent(AuditLogReceiver.ACTION_LOG).apply {
                 setPackage("me.pj.jqb")
                 putExtra("package_name", pkg)
+                putExtra("app_name", appName)
                 putExtra("action", action)
-                putExtra("trigger_reason", reason)
+                putExtra("trigger_reason", triggerCode)
                 putExtra("spoofed_payload", payload)
+                putExtra("calling_pid", callingPid)
+                putExtra("calling_uid", callingUid)
+                putExtra("process_name", processName)
+                putExtra("proc_state", procState)
             }
-            // Send broadcast from system_server
             safeSendBroadcast(ctx, intent)
         } catch (e: Exception) {
             XposedBridge.log("$TAG reportIntercept failed: ${e.message}")
+        } finally {
+            Binder.restoreCallingIdentity(identity)
         }
     }
 
@@ -275,8 +576,18 @@ object SystemServerHook {
             } else {
                 ctx.sendBroadcast(intent)
             }
-        } catch (t: Throwable) {
+        } catch (_: Throwable) {
             ctx.sendBroadcast(intent)
+        }
+    }
+
+    private fun sendAliveAck(ctx: Context) {
+        try {
+            val ackIntent = Intent(AuditLogReceiver.ACTION_SYSTEM_HOOK_ALIVE).apply {
+                setPackage("me.pj.jqb")
+            }
+            safeSendBroadcast(ctx, ackIntent)
+        } catch (_: Throwable) {
         }
     }
 
@@ -285,7 +596,8 @@ object SystemServerHook {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context?, intent: Intent?) {
                 val configJson = intent?.getStringExtra("config_json") ?: return
-                updateConfigFromJson(configJson)
+                updateConfigFromJson(configJson, persistToSystemDisk = true)
+                sendAliveAck(context)
                 XposedBridge.log("$TAG Config updated dynamically via broadcast!")
             }
         }
@@ -297,7 +609,6 @@ object SystemServerHook {
                 } else {
                     context.registerReceiver(receiver, filter)
                 }
-                // Request current config from ClipBox
                 val requestIntent = Intent(AuditLogReceiver.ACTION_REQUEST_CONFIG).apply {
                     setPackage("me.pj.jqb")
                 }
@@ -309,21 +620,43 @@ object SystemServerHook {
     }
 
     private fun loadConfigFromDiskFallback() {
-        try {
-            val file = File("/data/user/0/me.pj.jqb/files/config.json")
-            if (file.exists() && file.canRead()) {
-                val content = file.readText()
-                updateConfigFromJson(content)
-                XposedBridge.log("$TAG Loaded initial config directly from disk fallback")
+        val candidates = listOf(
+            File("/data/system/clipbox_config.json"),
+            File("/data/user/0/me.pj.jqb/files/config.json")
+        )
+        for (file in candidates) {
+            try {
+                if (file.exists() && file.canRead()) {
+                    val content = file.readText()
+                    if (content.isNotBlank()) {
+                        updateConfigFromJson(content, persistToSystemDisk = false)
+                        XposedBridge.log("$TAG Loaded initial config from ${file.absolutePath}")
+                        return
+                    }
+                }
+            } catch (_: Exception) {
             }
-        } catch (e: Exception) {
-            // Ignore if restricted
         }
     }
 
-    fun updateConfigFromJson(jsonString: String) {
+    fun updateConfigFromJson(jsonString: String, persistToSystemDisk: Boolean = false) {
         try {
             currentConfig = json.decodeFromString(jsonString)
+            decoyCacheMap.clear()
+            if (persistToSystemDisk) {
+                try {
+                    val atomicFile = AtomicFile(File("/data/system/clipbox_config.json"))
+                    val fos = atomicFile.startWrite()
+                    try {
+                        fos.write(jsonString.toByteArray(Charsets.UTF_8))
+                        atomicFile.finishWrite(fos)
+                    } catch (t: Throwable) {
+                        atomicFile.failWrite(fos)
+                        throw t
+                    }
+                } catch (_: Throwable) {
+                }
+            }
         } catch (e: Exception) {
             XposedBridge.log("$TAG Failed to parse updated config: ${e.message}")
         }

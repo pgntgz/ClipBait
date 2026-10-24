@@ -456,6 +456,7 @@ object SystemServerHook {
     private fun shouldBypassPackage(pkg: String): Boolean {
         if (pkg == "android" ||
             pkg == "com.android.systemui" ||
+            pkg == "io.github.pgntgz.clipbait" ||
             pkg == "me.pj.jqb"
         ) {
             return true
@@ -554,7 +555,7 @@ object SystemServerHook {
         try {
             val appName = resolveAppName(pkg)
             val intent = Intent(AuditLogReceiver.ACTION_LOG).apply {
-                setPackage("me.pj.jqb")
+                setPackage("io.github.pgntgz.clipbait")
                 putExtra("package_name", pkg)
                 putExtra("app_name", appName)
                 putExtra("action", action)
@@ -589,7 +590,7 @@ object SystemServerHook {
     private fun sendAliveAck(ctx: Context) {
         try {
             val ackIntent = Intent(AuditLogReceiver.ACTION_SYSTEM_HOOK_ALIVE).apply {
-                setPackage("me.pj.jqb")
+                setPackage("io.github.pgntgz.clipbait")
             }
             safeSendBroadcast(ctx, ackIntent)
         } catch (_: Throwable) {
@@ -613,7 +614,7 @@ object SystemServerHook {
                     context.registerReceiver(
                         receiver,
                         filter,
-                        "me.pj.jqb.permission.INTERNAL_IPC",
+                        "io.github.pgntgz.clipbait.permission.INTERNAL_IPC",
                         null,
                         Context.RECEIVER_EXPORTED
                     )
@@ -621,12 +622,12 @@ object SystemServerHook {
                     context.registerReceiver(
                         receiver,
                         filter,
-                        "me.pj.jqb.permission.INTERNAL_IPC",
+                        "io.github.pgntgz.clipbait.permission.INTERNAL_IPC",
                         null
                     )
                 }
                 val requestIntent = Intent(AuditLogReceiver.ACTION_REQUEST_CONFIG).apply {
-                    setPackage("me.pj.jqb")
+                    setPackage("io.github.pgntgz.clipbait")
                 }
                 safeSendBroadcast(context, requestIntent)
             } catch (_: Throwable) {
@@ -637,7 +638,7 @@ object SystemServerHook {
                         context.registerReceiver(receiver, filter)
                     }
                     val requestIntent = Intent(AuditLogReceiver.ACTION_REQUEST_CONFIG).apply {
-                        setPackage("me.pj.jqb")
+                        setPackage("io.github.pgntgz.clipbait")
                     }
                     safeSendBroadcast(context, requestIntent)
                 } catch (e: Exception) {
@@ -650,6 +651,7 @@ object SystemServerHook {
     private fun loadConfigFromDiskFallback() {
         val candidates = listOf(
             File("/data/system/clipbox_config.json"),
+            File("/data/user/0/io.github.pgntgz.clipbait/files/config.json"),
             File("/data/user/0/me.pj.jqb/files/config.json")
         )
         for (file in candidates) {

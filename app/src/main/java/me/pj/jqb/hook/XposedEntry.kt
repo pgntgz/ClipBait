@@ -11,7 +11,7 @@ class XposedEntry : IXposedHookLoadPackage {
         val packageName = lpparam.packageName ?: return
 
         // 1. In our own app, hook the activation check method to return true
-        if (packageName == "me.pj.jqb") {
+        if (packageName == "io.github.pgntgz.clipbait" || packageName == "me.pj.jqb") {
             try {
                 XposedHelpers.findAndHookMethod(
                     "me.pj.jqb.ClipBoxApp",

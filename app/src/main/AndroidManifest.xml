@@ -12,9 +12,9 @@
 
     <!-- Protected permission for internal IPC between system_server and ClipBait -->
     <permission
-        android:name="me.pj.jqb.permission.INTERNAL_IPC"
+        android:name="io.github.pgntgz.clipbait.permission.INTERNAL_IPC"
         android:protectionLevel="signature" />
-    <uses-permission android:name="me.pj.jqb.permission.INTERNAL_IPC" />
+    <uses-permission android:name="io.github.pgntgz.clipbait.permission.INTERNAL_IPC" />
 
     <application
         android:name=".ClipBoxApp"
@@ -53,26 +53,26 @@
         <!-- Audit Log ContentProvider -->
         <provider
             android:name=".data.provider.AuditLogProvider"
-            android:authorities="me.pj.jqb.provider.audit"
+            android:authorities="io.github.pgntgz.clipbait.provider.audit"
             android:exported="false"
             android:multiprocess="false" />
 
         <!-- Config ContentProvider -->
         <provider
             android:name=".data.provider.ConfigProvider"
-            android:authorities="me.pj.jqb.provider.config"
+            android:authorities="io.github.pgntgz.clipbait.provider.config"
             android:exported="false"
             android:multiprocess="false" />
 
         <!-- BroadcastReceiver to receive logs and config requests from system_server -->
         <receiver
             android:name=".data.receiver.AuditLogReceiver"
-            android:permission="me.pj.jqb.permission.INTERNAL_IPC"
+            android:permission="io.github.pgntgz.clipbait.permission.INTERNAL_IPC"
             android:exported="true">
             <intent-filter>
-                <action android:name="me.pj.jqb.ACTION_LOG" />
-                <action android:name="me.pj.jqb.ACTION_REQUEST_CONFIG" />
-                <action android:name="me.pj.jqb.ACTION_SYSTEM_HOOK_ALIVE" />
+                <action android:name="io.github.pgntgz.clipbait.ACTION_LOG" />
+                <action android:name="io.github.pgntgz.clipbait.ACTION_REQUEST_CONFIG" />
+                <action android:name="io.github.pgntgz.clipbait.ACTION_SYSTEM_HOOK_ALIVE" />
             </intent-filter>
         </receiver>
 

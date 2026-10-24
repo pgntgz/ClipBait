@@ -1,0 +1,65 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build APK & Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Prepare APK Asset
+        id: prepare_asset
+        run: |
+          TAG_NAME="${{ github.ref_name }}"
+          if [ -z "$TAG_NAME" ] || [ "${{ github.ref_type }}" != "tag" ]; then
+            TAG_NAME="latest"
+          fi
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/ClipBait-${TAG_NAME}.apk"
+          echo "apk_path=dist/ClipBait-${TAG_NAME}.apk" >> $GITHUB_OUTPUT
+          echo "apk_name=ClipBait-${TAG_NAME}.apk" >> $GITHUB_OUTPUT
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.prepare_asset.outputs.apk_name }}
+          path: ${{ steps.prepare_asset.outputs.apk_path }}
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ClipBait ${{ github.ref_name }}
+          files: ${{ steps.prepare_asset.outputs.apk_path }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true

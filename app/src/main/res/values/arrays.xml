@@ -5,6 +5,6 @@
          No need to ever add or remove individual apps in Vector, and no reboots needed! -->
     <string-array name="xposed_scope">
         <item>android</item>
-        <item>me.pj.jqb</item>
+        <item>io.github.pgntgz.clipbait</item>
     </string-array>
 </resources>

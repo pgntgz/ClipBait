@@ -350,7 +350,7 @@ class ConfigRepository(private val context: Context) {
     private fun notifyConfigChanged() {
         try {
             context.contentResolver.notifyChange(
-                Uri.parse("content://me.pj.jqb.provider.config/rules"),
+                Uri.parse("content://io.github.pgntgz.clipbait.provider.config/rules"),
                 null
             )
             broadcastConfigToSystemServer()

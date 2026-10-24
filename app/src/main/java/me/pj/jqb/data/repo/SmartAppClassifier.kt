@@ -43,6 +43,7 @@ object SmartAppClassifier {
 
     // Clean open-source / proxy / input method tools that should NEVER be flagged as rogue domestic apps
     private val safeWhitelistPrefixes = listOf(
+        "io.github.pgntgz.clipbait",
         "me.pj.jqb",
         "org.fcitx.",
         "io.nekohasekai.",

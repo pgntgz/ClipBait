@@ -115,10 +115,10 @@ class AuditLogReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        const val ACTION_LOG = "me.pj.jqb.ACTION_LOG"
-        const val ACTION_REQUEST_CONFIG = "me.pj.jqb.ACTION_REQUEST_CONFIG"
-        const val ACTION_CONFIG_UPDATED = "me.pj.jqb.ACTION_CONFIG_UPDATED"
-        const val ACTION_SYSTEM_HOOK_ALIVE = "me.pj.jqb.ACTION_SYSTEM_HOOK_ALIVE"
+        const val ACTION_LOG = "io.github.pgntgz.clipbait.ACTION_LOG"
+        const val ACTION_REQUEST_CONFIG = "io.github.pgntgz.clipbait.ACTION_REQUEST_CONFIG"
+        const val ACTION_CONFIG_UPDATED = "io.github.pgntgz.clipbait.ACTION_CONFIG_UPDATED"
+        const val ACTION_SYSTEM_HOOK_ALIVE = "io.github.pgntgz.clipbait.ACTION_SYSTEM_HOOK_ALIVE"
 
         @Volatile
         private var lastToastTime: Long = 0L

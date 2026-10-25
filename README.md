@@ -1,6 +1,6 @@
 # ClipBait
 
-ClipBait 是一款为应对剪切板泄露而生的开源 Xposed 模块，喜欢给乱翻剪贴板的软件下点饵。它在 `system_server` 底层拦截偷读行为并伪装返回假词、百科或直接掐灭。仅需勾选系统框架，规则与词库支持热更新，GUI 设计遵循 MD3 规范。
+ClipBait是一开源的Xposed模块，为应对剪切板泄露而生，ClipBait喜欢给乱翻剪贴板的软件下点饵。他会在 system_server 底层拦截偷读行为并伪装返回假词、百科或直接掐灭。仅需勾选系统框架，规则与词库支持热更新。GUI设计遵循MD3设计体系。
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Language: Kotlin](https://img.shields.io/badge/Language-Kotlin-7F52FF.svg?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
@@ -32,7 +32,7 @@ GUI设计遵照Material Design 3体系，使用Kotlin开发，大量采用MDUI�
 - 点开单条记录可以看到具体是主进程还是 `:push` 这种子进程伸的手、当时塞了什么假话，顺便给前三名颁奖和放个礼花。
 
 ## 开发
-开发的原因是出于我个人对滥读剪切板的厌恶，事实上我基本不懂Android开发，所以这个项目几乎完全由 AI 构建，如果有BUG或者点子欢迎反馈。
+开发的原因是出于我个人对滥读剪切板的厌恶，事实上我基本不懂Android开发，所以这个项目几乎完全由 AI 构建，如果有发现BUG或者点子欢迎反馈。
 
 - 源码仓库：[https://github.com/pgntgz/ClipBait](https://github.com/pgntgz/ClipBait)
 - 问题反馈：[Issues](https://github.com/pgntgz/ClipBait/issues)

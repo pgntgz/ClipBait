@@ -1,14 +1,18 @@
 # ClipBait
 
-给喜欢乱翻剪贴板的软件下点饵。在 system_server 底层拦截偷读行为并伪装返回假词、百科或直接掐灭。仅需勾选系统框架，规则与词库支持热更新。
+ClipBait 是一款为应对剪切板泄露而生的开源 Xposed 模块，喜欢给乱翻剪贴板的软件下点饵。它在 `system_server` 底层拦截偷读行为并伪装返回假词、百科或直接掐灭。仅需勾选系统框架，规则与词库支持热更新，GUI 设计遵循 MD3 规范。
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Language: Kotlin](https://img.shields.io/badge/Language-Kotlin-7F52FF.svg?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
+[![Xposed API: 82](https://img.shields.io/badge/Xposed-API%2082-orange.svg?logo=android&logoColor=white)](https://api.xposed.info/)
 
 国内不少应用（电商、短视频、带统计 SDK 的工具等）有个坏毛病：只要一切回前台或者躲在后台推送进程里，不管你有没有点粘贴，先顺手把剪贴板翻一遍。直接拦空有时候会被它们察觉，不如干脆塞点假词、百科或者怪话糊弄过去，顺便记下来给他们颁个奖。
 
 ## 使用
 和大多数Xposed插件差不多，你**只需要在 LSPosed / Vector 里勾上模块请求的「系统框架 (system Framework)」即可，无需勾选其他任何软件**。
 
-- **支持环境**：Android 10 ~ 17（API 29+），LSPosed / Vector 等现代 Xposed 框架
-- **作用域**：仅 `系统框架 (android)`
+- **支持环境**：Android 10 ~ 17（API 29+），LSPosed / Vector 等现代 Xposed 框架（API82）
+- **作用域**：仅需要勾上模块请求的「系统框架 (system Framework)」
 - **热生效**：首次激活模块需要重启一次手机；之后无论是新装应用还是修改拦截规则、抽词库，都是当场生效，无须重启。
 - **输入法兼容**：自动识别并放行系统当前激活的输入法（如 Fcitx5、Gboard 等），平时用输入法剪贴板粘贴不受影响。
 
@@ -20,6 +24,8 @@
 - **智能**：你自己手动点粘贴（长按粘贴菜单、点粘贴按钮）照常放行；应用刚切回前台头两秒自动偷读、或者躲在后台静默读，直接拦下（可设回传空剪贴板或塞假词）。适合微信、QQ 等日常还得正常聊天的软件。
 - **伪装**：不管什么时候来读，都从词库里随机抽一句假话塞给它（可以设定防连读穿帮保鲜期，不怕应用一秒内连读校验）。内置联网抽词（维基百科、伪基大典、`chouxiang.world`）和本地生成好的（弱智吧暴论、假淘口令、废话文学、假报错栈），也支持自己手写。
 - **阻断**：永远返回空剪贴板，并掐掉剪贴板变动监听。
+
+GUI设计遵照Material Design 3体系，使用Kotlin开发，大量采用MDUI图像资产集，支持动态取色，主题图标等MD3功能。
 
 另外附带一个**光荣榜**：
 - 统计「读取次数积分榜」和可选的「最爱读取积分榜」（结合应用真实前台使用时长，揪出没用几分钟却天天摸兜的应用）。

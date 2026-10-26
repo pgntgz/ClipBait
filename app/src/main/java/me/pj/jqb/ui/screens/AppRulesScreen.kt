@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -258,52 +259,59 @@ fun AppRulesScreen(viewModel: MainViewModel) {
                 )
             )
 
-            // Filter Chips + Smart Classifier Trigger Chip
-            Row(
+            // Filter Chips + Smart Classifier Trigger Chip (Scrollable to prevent cramped text wrapping)
+            LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                    .padding(vertical = 4.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                AssistChip(
-                    onClick = {
-                        view.tickHaptic(hapticEnabled)
-                        showSmartSheet = true
-                        viewModel.scanDomesticApps()
-                    },
-                    label = { Text(tr("一键揪出毒瘤", "Auto-Detect")) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Outlined.AutoFixHigh,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    },
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
-                        labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                    ),
-                    border = null
-                )
-                val configuredCount = apps.count { it.action != ActionType.DIRECT }
-                FilterChip(
-                    selected = filterConfiguredOnly,
-                    onClick = {
-                        view.tickHaptic(hapticEnabled)
-                        filterConfiguredOnly = !filterConfiguredOnly
-                    },
-                    label = { Text(tr("已设规矩 ($configuredCount)", "Configured ($configuredCount)")) }
-                )
-                FilterChip(
-                    selected = hideSystemApps,
-                    onClick = {
-                        view.tickHaptic(hapticEnabled)
-                        hideSystemApps = !hideSystemApps
-                    },
-                    label = { Text(tr("不看系统应用", "Hide System")) }
-                )
+                item {
+                    AssistChip(
+                        onClick = {
+                            view.tickHaptic(hapticEnabled)
+                            showSmartSheet = true
+                            viewModel.scanDomesticApps()
+                        },
+                        label = { Text(tr("一键揪出毒瘤", "Auto-Detect")) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.AutoFixHigh,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
+                            labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        ),
+                        border = null
+                    )
+                }
+                item {
+                    val configuredCount = apps.count { it.action != ActionType.DIRECT }
+                    FilterChip(
+                        selected = filterConfiguredOnly,
+                        onClick = {
+                            view.tickHaptic(hapticEnabled)
+                            filterConfiguredOnly = !filterConfiguredOnly
+                        },
+                        label = { Text(tr("已设规矩 ($configuredCount)", "Configured ($configuredCount)")) }
+                    )
+                }
+                item {
+                    FilterChip(
+                        selected = hideSystemApps,
+                        onClick = {
+                            view.tickHaptic(hapticEnabled)
+                            hideSystemApps = !hideSystemApps
+                        },
+                        label = { Text(tr("不看系统应用", "Hide System")) }
+                    )
+                }
             }
 
             if (isLoading) {
@@ -561,14 +569,14 @@ fun AppRuleCard(
         ),
         shape = RoundedCornerShape(16.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AppIcon(
                     packageName = appItem.packageName,
-                    size = 40.dp,
+                    size = 42.dp,
                     cornerRadius = 10.dp
                 )
 
@@ -583,19 +591,38 @@ fun AppRuleCard(
                         Text(
                             text = appItem.appName,
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Medium,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f, fill = false)
                         )
+                        Spacer(modifier = Modifier.width(8.dp))
                         if (appItem.action != ActionType.DIRECT) {
-                            Text(
-                                text = appItem.action.summary(isEn),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = when (appItem.action) {
+                                    ActionType.SMART -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
+                                    ActionType.SPOOF -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.65f)
+                                    ActionType.BLOCK -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f)
+                                    else -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f)
+                                }
+                            ) {
+                                Text(
+                                    text = appItem.action.summary(isEn),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = when (appItem.action) {
+                                        ActionType.SMART -> MaterialTheme.colorScheme.onPrimaryContainer
+                                        ActionType.SPOOF -> MaterialTheme.colorScheme.onTertiaryContainer
+                                        ActionType.BLOCK -> MaterialTheme.colorScheme.onErrorContainer
+                                        else -> MaterialTheme.colorScheme.onSecondaryContainer
+                                    },
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
                         }
                     }
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = appItem.packageName,
                         style = MaterialTheme.typography.labelSmall,
@@ -606,7 +633,7 @@ fun AppRuleCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             ActionPillSelector(
                 selectedAction = appItem.action,

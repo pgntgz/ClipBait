@@ -54,10 +54,10 @@ fun ActionPillSelector(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         ALL_ACTIONS.forEach { action ->
             val isSelected = action == selectedAction
@@ -111,7 +111,7 @@ fun ActionPillSelector(
                         scaleX = scale
                         scaleY = scale
                     }
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(7.dp))
                     .background(bgColor)
                     .clickable {
                         if (!isSelected) {
@@ -119,7 +119,7 @@ fun ActionPillSelector(
                             onActionSelected(action)
                         }
                     }
-                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                    .padding(vertical = 6.dp, horizontal = 2.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Row(
@@ -129,10 +129,10 @@ fun ActionPillSelector(
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        modifier = Modifier.size(14.dp),
+                        modifier = Modifier.size(13.dp),
                         tint = textColor
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(3.dp))
                     val isEn = isEnglishLocale()
                     Text(
                         text = action.label(isEn),

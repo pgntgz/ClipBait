@@ -225,10 +225,10 @@ fun ConfigScreen(viewModel: MainViewModel) {
                                 onValueChange = { customDecoyInput = it },
                                 modifier = Modifier.weight(1f),
                                 placeholder = {
-                                    Text(tr("自己写一句怪话或假口令塞进去...", "Write your own decoy phrase..."))
+                                    Text(tr("写一句怪话或假口令...", "Write a decoy phrase..."))
                                 },
                                 singleLine = true,
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                                     unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -244,7 +244,8 @@ fun ConfigScreen(viewModel: MainViewModel) {
                                     }
                                 },
                                 enabled = customDecoyInput.isNotBlank(),
-                                shape = RoundedCornerShape(10.dp)
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.height(52.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Outlined.Add,
@@ -276,34 +277,40 @@ fun ConfigScreen(viewModel: MainViewModel) {
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.primary
                                     )
-                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
                                     decoy.pool.take(15).forEach { sample ->
-                                        Row(
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = MaterialTheme.colorScheme.surfaceContainerLow,
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(vertical = 3.dp),
-                                            verticalAlignment = Alignment.Top,
-                                            horizontalArrangement = Arrangement.SpaceBetween
+                                                .padding(vertical = 3.dp)
                                         ) {
-                                            Text(
-                                                text = "· $sample",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                            IconButton(
-                                                onClick = {
-                                                    view.tickHaptic(hapticEnabled)
-                                                    viewModel.removeDecoyEntry(decoy.id, sample)
-                                                },
-                                                modifier = Modifier.size(26.dp)
+                                            Row(
+                                                modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
-                                                Icon(
-                                                    imageVector = Icons.Outlined.Close,
-                                                    contentDescription = tr("删除这条", "Remove"),
-                                                    modifier = Modifier.size(14.dp),
-                                                    tint = MaterialTheme.colorScheme.outline
+                                                Text(
+                                                    text = sample,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    modifier = Modifier.weight(1f)
                                                 )
+                                                IconButton(
+                                                    onClick = {
+                                                        view.tickHaptic(hapticEnabled)
+                                                        viewModel.removeDecoyEntry(decoy.id, sample)
+                                                    },
+                                                    modifier = Modifier.size(28.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Outlined.Close,
+                                                        contentDescription = tr("删除这条", "Remove"),
+                                                        modifier = Modifier.size(16.dp),
+                                                        tint = MaterialTheme.colorScheme.outline
+                                                    )
+                                                }
                                             }
                                         }
                                     }

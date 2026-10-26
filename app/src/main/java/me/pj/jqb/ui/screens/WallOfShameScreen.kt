@@ -563,11 +563,7 @@ fun TopOffendersCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (activeTab == 0) {
-                            tr("读取次数积分榜", "Read Count Standings")
-                        } else {
-                            tr("最爱读取积分榜", "Most Obsessed Standings")
-                        },
+                        text = tr("偷看光荣榜", "Hall of Shame Podium"),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -613,8 +609,8 @@ fun TopOffendersCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     val tabs = listOf(
-                        tr("读取次数积分榜", "Read Count"),
-                        tr("最爱读取积分榜", "Most Obsessed")
+                        tr("偷看次数榜", "Read Count"),
+                        tr("最爱摸兜榜", "Most Obsessed")
                     )
                     tabs.forEachIndexed { idx, label ->
                         val isSel = activeTab == idx
@@ -706,13 +702,13 @@ fun TopOffendersCard(
                             )
                             val roast = if (activeTab == 1) {
                                 tr(
-                                    "${champion.subNote ?: ""}，折合执念积分 ${champion.scoreText}",
+                                    "${champion.subNote ?: ""} · 执念积分 ${champion.scoreText}",
                                     "${champion.subNote ?: ""} · Obsession Score ${champion.scoreText}"
                                 )
                             } else {
                                 tr(
-                                    "已被抓到 ${champion.scoreValue} 次，手脚相当勤快（点我查看详情并放礼花）",
-                                    "Caught ${champion.scoreValue} times—busy little fingers (tap for details & confetti)"
+                                    "累计已被抓到 ${champion.scoreValue} 次，手脚相当勤快",
+                                    "Caught ${champion.scoreValue} times · Busy hands"
                                 )
                             }
                             Text(
@@ -721,6 +717,12 @@ fun TopOffendersCard(
                                 color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
                             )
                         }
+                        Icon(
+                            imageVector = Icons.Outlined.ChevronRight,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
+                        )
                     }
                 }
             }
@@ -1018,49 +1020,86 @@ fun DeepProbeAnalysisCard(records: List<AuditRecord>) {
 
             val buckets = analysis.third
             val maxBucket = (buckets.maxOrNull() ?: 1).coerceAtLeast(1)
-            val labels = if (isEn) {
+            val periodNames = if (isEn) {
                 listOf("00-06h", "06-12h", "12-18h", "18-24h")
             } else {
-                listOf("凌晨 0-6点", "上午 6-12点", "下午 12-18点", "晚上 18-24点")
+                listOf("0-6点", "6-12点", "12-18点", "18-24点")
             }
-            Spacer(modifier = Modifier.height(12.dp))
+            val periodDescs = if (isEn) {
+                listOf("Night", "Morning", "Afternoon", "Evening")
+            } else {
+                listOf("凌晨", "上午", "下午", "夜间")
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
             Text(
                 text = tr("一天里什么时候最爱读", "Peak Snooping Hours"),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(modifier = Modifier.height(6.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                buckets.forEachIndexed { idx, count ->
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    buckets.forEachIndexed { idx, count ->
+                        val barRatio = if (maxBucket > 0) (count.toFloat() / maxBucket).coerceIn(0.08f, 1f) else 0.08f
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
+                            Text(
+                                text = if (count > 0) "${count}次" else "-",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (count > 0) FontWeight.Bold else FontWeight.Normal,
+                                color = if (count > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
                             Box(
                                 modifier = Modifier
-                                    .fillMaxWidth((count.toFloat() / maxBucket).coerceIn(0.05f, 1f))
-                                    .fillMaxHeight()
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.tertiary)
+                                    .width(28.dp)
+                                    .height(36.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                                contentAlignment = Alignment.BottomCenter
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .fillMaxHeight(barRatio)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(
+                                            if (count == maxBucket && count > 0) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                                            }
+                                        )
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = periodDescs[idx],
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = periodNames[idx],
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
                             )
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "${labels[idx]} ($count)",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline,
-                            maxLines = 1
-                        )
                     }
                 }
             }
@@ -1343,11 +1382,40 @@ fun AuditDetailBottomSheet(
                             color = MaterialTheme.colorScheme.outline
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "v${appMeta.versionName} · TargetSDK ${appMeta.targetSdk} · UID ${appMeta.uid}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            Text(
+                                text = "v${appMeta.versionName.ifBlank { "1.0" }}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh
+                            ) {
+                                Text(
+                                    text = "TargetSDK ${appMeta.targetSdk}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh
+                            ) {
+                                Text(
+                                    text = "UID ${appMeta.uid}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
                     }
                     if (confettiEnabled) {
                         IconButton(
@@ -1512,41 +1580,95 @@ fun AuditDetailBottomSheet(
                     ) {
                         Column(
                             modifier = Modifier.padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Text(
-                                text = tr("这次是怎么抓到的", "How This Read Was Caught"),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = trigger.explain(isEn),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                            DetailRow(label = tr("时间", "Timestamp"), value = fullTime)
-                            DetailRow(
-                                label = tr("当时怎么处理的", "Action Taken"),
-                                value = if (highlightedRecord.action == "BLOCKED") {
-                                    tr("直接回了个空剪贴板", "Returned an empty clipboard")
-                                } else {
-                                    tr("塞了一条假文字糊弄过去", "Fed a decoy phrase")
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = tr("这次是怎么抓到的", "How This Read Was Caught"),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (highlightedRecord.action == "BLOCKED") {
+                                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
+                                    } else {
+                                        MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.7f)
+                                    }
+                                ) {
+                                    Text(
+                                        text = if (highlightedRecord.action == "BLOCKED") {
+                                            tr("已阻断（空剪贴板）", "Blocked (Empty)")
+                                        } else {
+                                            tr("已伪装（喂了假词）", "Spoofed (Decoy)")
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (highlightedRecord.action == "BLOCKED") {
+                                            MaterialTheme.colorScheme.onErrorContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onTertiaryContainer
+                                        },
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
                                 }
-                            )
-                            DetailRow(label = tr("触发场景", "Trigger"), value = trigger.displayName(isEn))
+                            }
+
+                            // Trigger Explanation Banner
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = triggerIconFor(trigger),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = trigger.displayName(isEn),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = trigger.explain(isEn),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                            DetailRow(label = tr("抓到时间", "Timestamp"), value = fullTime)
                             DetailRow(
                                 label = tr("伸手的进程", "Process"),
                                 value = highlightedRecord.processName.ifBlank { packageName }
                             )
                             if (highlightedRecord.callingPid > 0) {
                                 DetailRow(
-                                    label = tr("进程号", "PID / UID"),
+                                    label = tr("进程号 (PID/UID)", "PID / UID"),
                                     value = "PID ${highlightedRecord.callingPid} · UID ${highlightedRecord.callingUid}"
                                 )
                             }
                             if (highlightedRecord.procState.isNotBlank()) {
-                                DetailRow(label = tr("系统判定", "System State"), value = highlightedRecord.procState)
+                                DetailRow(
+                                    label = tr("系统判定", "System State"),
+                                    value = formatProcState(highlightedRecord.procState, isEn)
+                                )
                             }
 
                             if (!highlightedRecord.spoofedPayload.isNullOrBlank()) {
@@ -1719,5 +1841,29 @@ private fun DetailRow(label: String, value: String) {
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f)
         )
+    }
+}
+
+private fun formatProcState(procState: String, isEn: Boolean): String {
+    if (procState.isBlank()) return ""
+    if (procState.contains("BURST_POLL", ignoreCase = true)) {
+        val ms = Regex("""\d+ms""").find(procState)?.value ?: ""
+        return if (isEn) "Rapid Burst Poll ($ms interval)" else "短时高频刺探 ($ms 间隔)"
+    }
+    if (procState.contains("TOP_ON_RESUME", ignoreCase = true)) {
+        val ms = Regex("""\d+ms""").find(procState)?.value ?: ""
+        return if (isEn) "Launch Resume Read ($ms)" else "切回前台瞬间摸兜 ($ms)"
+    }
+    if (procState.contains("BACKGROUND_SUBPROCESS", ignoreCase = true)) {
+        return if (isEn) "Background Subprocess Read" else "后台子进程偷读"
+    }
+    return when (procState.uppercase()) {
+        "TOP" -> if (isEn) "Foreground Active" else "前台交互中"
+        "TOP_SLEEPING" -> if (isEn) "Screen Off / Standby" else "息屏待机状态"
+        "FOREGROUND_SERVICE" -> if (isEn) "Foreground Service" else "前台常驻服务"
+        "BOUND_TOP" -> if (isEn) "Bound to Foreground" else "依附前台进程"
+        "SERVICE" -> if (isEn) "Background Daemon" else "后台服务唤醒"
+        "CACHED_EMPTY", "CACHED_ACTIVITY" -> if (isEn) "Cached Background" else "后台缓存状态"
+        else -> procState
     }
 }

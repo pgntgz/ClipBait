@@ -52,6 +52,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -383,20 +386,21 @@ fun SettingsScreen(viewModel: MainViewModel) {
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         val cacheOptions = listOf(
-                            0L to tr("每次都换新词", "New every read"),
-                            1500L to tr("1.5 秒（推荐）", "1.5s (Recommended)"),
-                            5000L to tr("5 秒", "5s"),
-                            30000L to tr("30 秒", "30s")
+                            0L to tr("每次换新", "Always"),
+                            1500L to tr("1.5秒", "1.5s"),
+                            5000L to tr("5秒", "5s"),
+                            30000L to tr("30秒", "30s")
                         )
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            cacheOptions.forEach { (ms, label) ->
-                                FilterChip(
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            cacheOptions.forEachIndexed { index, (ms, label) ->
+                                SegmentedButton(
                                     selected = decoyCacheMs == ms,
                                     onClick = {
                                         view.tickHaptic(hapticEnabled)
                                         viewModel.setDecoyCacheMs(ms)
                                     },
-                                    label = { Text(label) }
+                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = cacheOptions.size),
+                                    label = { Text(label, maxLines = 1) }
                                 )
                             }
                         }
@@ -664,17 +668,16 @@ fun SettingsScreen(viewModel: MainViewModel) {
                             fontWeight = FontWeight.Medium
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            dayOptions.forEach { days ->
-                                FilterChip(
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            dayOptions.forEachIndexed { index, days ->
+                                SegmentedButton(
                                     selected = retentionDays == days,
                                     onClick = {
                                         view.tickHaptic(hapticEnabled)
                                         viewModel.setRetentionDays(days)
                                     },
-                                    label = { Text(if (isEn) "$days days" else "$days 天") }
+                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = dayOptions.size),
+                                    label = { Text(if (isEn) "${days}d" else "${days}天", maxLines = 1) }
                                 )
                             }
                         }
@@ -740,7 +743,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
                                 color = MaterialTheme.colorScheme.secondaryContainer
                             ) {
                                 Text(
-                                    text = "v1.1.0 · ${AppInfo.LICENSE}",
+                                    text = "v${AppInfo.VERSION_NAME} · ${AppInfo.LICENSE}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
@@ -763,19 +766,19 @@ fun SettingsScreen(viewModel: MainViewModel) {
                         AboutLinkRow(
                             icon = Icons.Outlined.Info,
                             label = tr("作者", "Author"),
-                            value = "${AppInfo.AUTHOR} (${AppInfo.AUTHOR_URL})",
+                            value = AppInfo.AUTHOR,
                             onClick = { openUrlSafely(context, AppInfo.AUTHOR_URL) }
                         )
                         AboutLinkRow(
                             icon = Icons.Outlined.Code,
                             label = tr("源码仓库", "Source Code"),
-                            value = AppInfo.SOURCE_URL,
+                            value = "GitHub · pgntgz/ClipBait",
                             onClick = { openUrlSafely(context, AppInfo.SOURCE_URL) }
                         )
                         AboutLinkRow(
                             icon = Icons.Outlined.BugReport,
                             label = tr("问题反馈", "Issue Tracker"),
-                            value = AppInfo.ISSUES_URL,
+                            value = tr("提交 Issue 或建议", "GitHub Issues & Feedback"),
                             onClick = { openUrlSafely(context, AppInfo.ISSUES_URL) }
                         )
                         AboutLinkRow(

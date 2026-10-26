@@ -7,6 +7,8 @@ object AppInfo {
 
     const val APP_NAME = "ClipBait"
 
+    const val VERSION_NAME = "1.1.1"
+
     const val AUTHOR = "pgntgz"
 
     const val AUTHOR_URL = "https://github.com/pgntgz"

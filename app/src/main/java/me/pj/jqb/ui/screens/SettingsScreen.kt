@@ -281,36 +281,50 @@ fun SettingsScreen(viewModel: MainViewModel) {
                             color = MaterialTheme.colorScheme.outline
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            SegmentedButton(
+                                modifier = Modifier.weight(1f),
+                                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
                                 selected = smartFallback != "spoof",
                                 onClick = {
                                     view.tickHaptic(hapticEnabled)
                                     viewModel.setSmartFallbackAction("block")
                                 },
-                                leadingIcon = {
+                                icon = {
                                     Icon(
                                         imageVector = Icons.Outlined.Block,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp)
                                     )
                                 },
-                                label = { Text(tr("直接给空剪贴板（阻断）", "Return Empty (Block)")) }
+                                label = {
+                                    Text(
+                                        text = tr("阻断 · 回空值", "Block (Empty)"),
+                                        maxLines = 1
+                                    )
+                                }
                             )
-                            FilterChip(
+                            SegmentedButton(
+                                modifier = Modifier.weight(1f),
+                                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
                                 selected = smartFallback == "spoof",
                                 onClick = {
                                     view.tickHaptic(hapticEnabled)
                                     viewModel.setSmartFallbackAction("spoof")
                                 },
-                                leadingIcon = {
+                                icon = {
                                     Icon(
                                         imageVector = Icons.Outlined.Shuffle,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp)
                                     )
                                 },
-                                label = { Text(tr("塞条假词糊弄（伪装）", "Feed Decoy (Spoof)")) }
+                                label = {
+                                    Text(
+                                        text = tr("伪装 · 塞假词", "Spoof (Decoy)"),
+                                        maxLines = 1
+                                    )
+                                }
                             )
                         }
 
@@ -446,15 +460,17 @@ fun SettingsScreen(viewModel: MainViewModel) {
                             "zh" to "中文",
                             "en" to "English"
                         )
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            langOptions.forEach { (code, label) ->
-                                FilterChip(
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            langOptions.forEachIndexed { index, (code, label) ->
+                                SegmentedButton(
+                                    modifier = Modifier.weight(1f),
+                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = langOptions.size),
                                     selected = currentLang == code,
                                     onClick = {
                                         view.tickHaptic(hapticEnabled)
                                         viewModel.setLanguage(code)
                                     },
-                                    label = { Text(label) }
+                                    label = { Text(label, maxLines = 1) }
                                 )
                             }
                         }

@@ -127,7 +127,7 @@ object SystemServerHook {
             val jsonStr = json.encodeToString(items)
             val intent = Intent(AuditLogReceiver.ACTION_BATCH_LOG).apply {
                 component = ComponentName("io.github.pgntgz.clipbait", "me.pj.jqb.data.receiver.AuditLogReceiver")
-                addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+                addFlags(Intent.FLAG_RECEIVER_FOREGROUND or Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
                 putExtra("batch_json", jsonStr)
             }
             safeSendBroadcast(ctx, intent)

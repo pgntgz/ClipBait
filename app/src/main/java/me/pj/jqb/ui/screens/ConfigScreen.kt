@@ -51,6 +51,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -523,29 +526,11 @@ fun DecoySourceWorkshopSheet(
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = tr("随机抽词", "Draw Random Decoys"),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(3, 5, 8).forEach { n ->
-                        FilterChip(
-                            selected = batchCount == n,
-                            onClick = {
-                                view.tickHaptic(hapticEnabled)
-                                batchCount = n
-                            },
-                            label = { Text(if (isEn) "$n each" else "每次 $n 条", maxLines = 1) }
-                        )
-                    }
-                }
-            }
+            Text(
+                text = tr("随机抽词", "Draw Random Decoys"),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
 
             // Concise open-source notice
             Text(
@@ -556,6 +541,30 @@ fun DecoySourceWorkshopSheet(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.outline
             )
+
+            // Balanced, symmetrical batch count selector
+            SingleChoiceSegmentedButtonRow(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                listOf(3, 5, 8).forEachIndexed { index, n ->
+                    SegmentedButton(
+                        modifier = Modifier.weight(1f),
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = 3),
+                        onClick = {
+                            view.tickHaptic(hapticEnabled)
+                            batchCount = n
+                        },
+                        selected = batchCount == n,
+                        label = {
+                            Text(
+                                text = if (isEn) "$n items" else "每次 $n 条",
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1
+                            )
+                        }
+                    )
+                }
+            }
 
             // Clean, non-wrapping source cards
             DecoySourceType.entries.forEach { source ->

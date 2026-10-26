@@ -21,6 +21,12 @@ interface AuditDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(record: AuditRecord): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(records: List<AuditRecord>)
+
+    @Query("SELECT COUNT(*) FROM audit_records WHERE packageName = :pkg AND timestamp = :ts")
+    suspend fun countByPackageAndTimestamp(pkg: String, ts: Long): Int
+
     @Query("SELECT * FROM audit_records ORDER BY timestamp DESC LIMIT :limit")
     fun getRecent(limit: Int = 200): Flow<List<AuditRecord>>
 

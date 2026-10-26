@@ -16,11 +16,15 @@ import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import me.pj.jqb.data.receiver.AuditLogReceiver
 import me.pj.jqb.model.ConfigModel
+import me.pj.jqb.model.PendingAuditItem
 import me.pj.jqb.model.TriggerType
 import java.io.File
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 object SystemServerHook {
@@ -54,6 +58,88 @@ object SystemServerHook {
 
     // Cache of verified input method packages to unconditionally bypass
     private val imePackageSet = ConcurrentHashMap.newKeySet<String>()
+
+    // Holds pending audit records when the UI app process is closed/swiped from recents
+    private val pendingAuditBuffer = ConcurrentHashMap<String, PendingAuditItem>()
+    private const val MAX_PENDING_AUDITS = 500
+    private val PENDING_AUDITS_FILE = File("/data/system/clipbait_pending_audits.json")
+
+    private fun loadPendingAuditsFromDisk() {
+        try {
+            if (PENDING_AUDITS_FILE.exists() && PENDING_AUDITS_FILE.canRead()) {
+                val text = PENDING_AUDITS_FILE.readText()
+                if (text.isNotBlank()) {
+                    val list = json.decodeFromString<List<PendingAuditItem>>(text)
+                    for (item in list) {
+                        pendingAuditBuffer[item.recordId] = item
+                    }
+                    XposedBridge.log("$TAG Loaded ${list.size} pending audits from disk.")
+                }
+            }
+        } catch (e: Exception) {
+            XposedBridge.log("$TAG loadPendingAuditsFromDisk error: ${e.message}")
+        }
+    }
+
+    private fun persistPendingAuditsToDisk() {
+        try {
+            val list = pendingAuditBuffer.values.toList()
+            if (list.isEmpty()) {
+                if (PENDING_AUDITS_FILE.exists()) {
+                    PENDING_AUDITS_FILE.delete()
+                }
+                return
+            }
+            val atomicFile = AtomicFile(PENDING_AUDITS_FILE)
+            val fos = atomicFile.startWrite()
+            try {
+                fos.write(json.encodeToString(list).toByteArray())
+                atomicFile.finishWrite(fos)
+            } catch (e: Exception) {
+                atomicFile.failWrite(fos)
+            }
+        } catch (e: Exception) {
+            XposedBridge.log("$TAG persistPendingAuditsToDisk error: ${e.message}")
+        }
+    }
+
+    private fun addPendingAudit(item: PendingAuditItem) {
+        if (pendingAuditBuffer.size >= MAX_PENDING_AUDITS) {
+            val sorted = pendingAuditBuffer.values.sortedBy { it.timestamp }
+            for (i in 0 until 50.coerceAtMost(sorted.size)) {
+                pendingAuditBuffer.remove(sorted[i].recordId)
+            }
+        }
+        pendingAuditBuffer[item.recordId] = item
+        persistPendingAuditsToDisk()
+    }
+
+    private fun removePendingAudit(recordId: String) {
+        if (pendingAuditBuffer.remove(recordId) != null) {
+            persistPendingAuditsToDisk()
+        }
+    }
+
+    private fun flushPendingAudits(ctx: Context) {
+        try {
+            val items = pendingAuditBuffer.values.toList().sortedBy { it.timestamp }
+            if (items.isEmpty()) return
+            val jsonStr = json.encodeToString(items)
+            val intent = Intent(AuditLogReceiver.ACTION_BATCH_LOG).apply {
+                component = ComponentName("io.github.pgntgz.clipbait", "me.pj.jqb.data.receiver.AuditLogReceiver")
+                addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+                putExtra("batch_json", jsonStr)
+            }
+            safeSendBroadcast(ctx, intent)
+            pendingAuditBuffer.clear()
+            if (PENDING_AUDITS_FILE.exists()) {
+                PENDING_AUDITS_FILE.delete()
+            }
+            XposedBridge.log("$TAG Flushed ${items.size} pending audits to ClipBait UI.")
+        } catch (e: Exception) {
+            XposedBridge.log("$TAG flushPendingAudits error: ${e.message}")
+        }
+    }
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -165,6 +251,7 @@ object SystemServerHook {
                     XposedBridge.log("$TAG Captured systemContext from ClipboardService")
                     setupConfigReceiver(ctx)
                     loadConfigFromDiskFallback()
+                    loadPendingAuditsFromDisk()
                 }
             }
         )
@@ -554,8 +641,26 @@ object SystemServerHook {
         val identity = Binder.clearCallingIdentity()
         try {
             val appName = resolveAppName(pkg)
+            val recordId = UUID.randomUUID().toString()
+            val pendingItem = PendingAuditItem(
+                recordId = recordId,
+                packageName = pkg,
+                appName = appName,
+                action = action,
+                triggerReason = triggerCode,
+                spoofedPayload = payload,
+                callingPid = callingPid,
+                callingUid = callingUid,
+                processName = processName,
+                procState = procState,
+                timestamp = now
+            )
+            addPendingAudit(pendingItem)
+
             val intent = Intent(AuditLogReceiver.ACTION_LOG).apply {
-                setPackage("io.github.pgntgz.clipbait")
+                component = ComponentName("io.github.pgntgz.clipbait", "me.pj.jqb.data.receiver.AuditLogReceiver")
+                addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES or Intent.FLAG_RECEIVER_FOREGROUND)
+                putExtra("record_id", recordId)
                 putExtra("package_name", pkg)
                 putExtra("app_name", appName)
                 putExtra("action", action)
@@ -565,6 +670,7 @@ object SystemServerHook {
                 putExtra("calling_uid", callingUid)
                 putExtra("process_name", processName)
                 putExtra("proc_state", procState)
+                putExtra("timestamp", now)
             }
             safeSendBroadcast(ctx, intent)
         } catch (e: Exception) {
@@ -590,7 +696,8 @@ object SystemServerHook {
     private fun sendAliveAck(ctx: Context) {
         try {
             val ackIntent = Intent(AuditLogReceiver.ACTION_SYSTEM_HOOK_ALIVE).apply {
-                setPackage("io.github.pgntgz.clipbait")
+                component = ComponentName("io.github.pgntgz.clipbait", "me.pj.jqb.data.receiver.AuditLogReceiver")
+                addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
             }
             safeSendBroadcast(ctx, ackIntent)
         } catch (_: Throwable) {
@@ -598,13 +705,35 @@ object SystemServerHook {
     }
 
     private fun setupConfigReceiver(context: Context) {
-        val filter = IntentFilter(AuditLogReceiver.ACTION_CONFIG_UPDATED)
+        val filter = IntentFilter().apply {
+            addAction(AuditLogReceiver.ACTION_CONFIG_UPDATED)
+            addAction(AuditLogReceiver.ACTION_PULL_PENDING_LOGS)
+            addAction(AuditLogReceiver.ACTION_LOG_ACK)
+        }
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context?, intent: Intent?) {
-                val configJson = intent?.getStringExtra("config_json") ?: return
-                updateConfigFromJson(configJson, persistToSystemDisk = true)
-                sendAliveAck(context)
-                XposedBridge.log("$TAG Config updated dynamically via broadcast!")
+                when (intent?.action) {
+                    AuditLogReceiver.ACTION_CONFIG_UPDATED -> {
+                        val configJson = intent.getStringExtra("config_json")
+                        if (configJson != null) {
+                            updateConfigFromJson(configJson, persistToSystemDisk = true)
+                        }
+                        sendAliveAck(context)
+                        flushPendingAudits(context)
+                        XposedBridge.log("$TAG Config updated dynamically via broadcast!")
+                    }
+                    AuditLogReceiver.ACTION_PULL_PENDING_LOGS -> {
+                        sendAliveAck(context)
+                        flushPendingAudits(context)
+                        XposedBridge.log("$TAG Responded to pull pending logs.")
+                    }
+                    AuditLogReceiver.ACTION_LOG_ACK -> {
+                        val ackId = intent.getStringExtra("record_id")
+                        if (!ackId.isNullOrBlank()) {
+                            removePendingAudit(ackId)
+                        }
+                    }
+                }
             }
         }
 

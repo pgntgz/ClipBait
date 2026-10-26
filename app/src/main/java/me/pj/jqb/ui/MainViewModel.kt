@@ -3,6 +3,7 @@ package me.pj.jqb.ui
 import android.app.AppOpsManager
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Process
@@ -22,6 +23,7 @@ import kotlinx.coroutines.launch
 import me.pj.jqb.ClipBoxApp
 import me.pj.jqb.HookState
 import me.pj.jqb.data.db.AppInterceptStat
+import me.pj.jqb.data.receiver.AuditLogReceiver
 import me.pj.jqb.data.repo.DecoySourceType
 import me.pj.jqb.data.repo.SmartAppClassifier
 import me.pj.jqb.data.repo.WikiRandomFetcher
@@ -178,6 +180,7 @@ class MainViewModel : ViewModel() {
     init {
         loadInstalledApps()
         recheckHookState()
+        pullPendingAudits()
         pruneOldAuditLogs()
     }
 
@@ -210,8 +213,19 @@ class MainViewModel : ViewModel() {
     fun recheckHookState() {
         viewModelScope.launch {
             configRepo.broadcastConfigToSystemServer()
+            pullPendingAudits()
             delay(1200)
             app.resolveHandshakeTimeout()
+        }
+    }
+
+    fun pullPendingAudits() {
+        try {
+            val intent = Intent(AuditLogReceiver.ACTION_PULL_PENDING_LOGS).apply {
+                setPackage("android")
+            }
+            app.sendBroadcast(intent)
+        } catch (_: Throwable) {
         }
     }
 

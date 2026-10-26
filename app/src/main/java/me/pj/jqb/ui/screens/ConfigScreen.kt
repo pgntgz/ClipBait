@@ -500,7 +500,7 @@ fun ConfigScreen(viewModel: MainViewModel) {
 @Composable
 fun DecoySourceWorkshopSheet(
     hapticEnabled: Boolean,
-    onDrawSource: (DecoySourceType, Int, (List<String>) -> Unit) -> Unit,
+    onDrawSource: (DecoySourceType, Int, (Result<List<String>>) -> Unit) -> Unit,
     onResetDefault: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -512,6 +512,7 @@ fun DecoySourceWorkshopSheet(
     var batchCount by remember { mutableIntStateOf(3) }
     var loadingSource by remember { mutableStateOf<DecoySourceType?>(null) }
     var lastDrawnPreview by remember { mutableStateOf<List<String>>(emptyList()) }
+    var lastErrorMsg by remember { mutableStateOf<String?>(null) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -636,14 +637,27 @@ fun DecoySourceWorkshopSheet(
                                 if (loadingSource == null) {
                                     view.tickHaptic(hapticEnabled, confirm = true)
                                     loadingSource = source
-                                    onDrawSource(source, batchCount) { added ->
+                                    lastErrorMsg = null
+                                    onDrawSource(source, batchCount) { result ->
                                         loadingSource = null
-                                        lastDrawnPreview = added
-                                        Toast.makeText(
-                                            context,
-                                            if (isEn) "Added ${added.size} entries" else "已加进词库 ${added.size} 条",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+                                        result.onSuccess { added ->
+                                            lastDrawnPreview = added
+                                            lastErrorMsg = null
+                                            Toast.makeText(
+                                                context,
+                                                if (isEn) "Added ${added.size} entries" else "已加进词库 ${added.size} 条",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }.onFailure { err ->
+                                            lastDrawnPreview = emptyList()
+                                            val errMsg = err.message ?: (if (isEn) "Network request failed" else "网络请求失败")
+                                            lastErrorMsg = errMsg
+                                            Toast.makeText(
+                                                context,
+                                                if (isEn) "Fetch failed: $errMsg" else "拉取失败：$errMsg",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
                                     }
                                 }
                             },
@@ -664,6 +678,29 @@ fun DecoySourceWorkshopSheet(
                                 )
                             }
                         }
+                    }
+                }
+            }
+
+            if (lastErrorMsg != null) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = tr("❌ 联网拉取失败（绝不用本地词库冒充）", "❌ Online Fetch Failed (No Fake Fallback)"),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = lastErrorMsg.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
                     }
                 }
             }

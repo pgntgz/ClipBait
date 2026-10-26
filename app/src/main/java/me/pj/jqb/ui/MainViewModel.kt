@@ -429,11 +429,17 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    fun drawDecoysFromSource(source: DecoySourceType, count: Int = 3, onDone: (List<String>) -> Unit) {
+    fun drawDecoysFromSource(source: DecoySourceType, count: Int = 3, onDone: (Result<List<String>>) -> Unit) {
         viewModelScope.launch {
-            val entries = WikiRandomFetcher.fetchFromSource(source, count)
-            configRepo.appendDecoyEntries("e_commerce_noise", entries)
-            onDone(entries)
+            try {
+                val entries = WikiRandomFetcher.fetchFromSource(source, count)
+                if (entries.isNotEmpty()) {
+                    configRepo.appendDecoyEntries("e_commerce_noise", entries)
+                }
+                onDone(Result.success(entries))
+            } catch (e: Exception) {
+                onDone(Result.failure(e))
+            }
         }
     }
 
@@ -494,10 +500,10 @@ class MainViewModel : ViewModel() {
                 TriggerType.ASYNC_POLL.code to "BURST_POLL (180ms)"
             ).random()
             val randomSource = listOf(
-                DecoySourceType.UNCYCLOPEDIA,
-                DecoySourceType.CHOUXIANG_WORLD,
                 DecoySourceType.WILD_PHILOSOPHY,
-                DecoySourceType.FAKE_SHARE_TOKEN
+                DecoySourceType.FAKE_SHARE_TOKEN,
+                DecoySourceType.NONSENSE_LITERATURE,
+                DecoySourceType.DEV_PANIC_TRAP
             ).random()
             val sampleDecoy = WikiRandomFetcher.fetchFromSource(randomSource, 1).firstOrNull()
                 ?: "一氧化二氢：一种无色无味但致死率高达100%的剧毒工业溶剂。"

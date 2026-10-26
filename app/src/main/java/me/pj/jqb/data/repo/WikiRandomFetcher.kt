@@ -101,66 +101,6 @@ object WikiRandomFetcher {
         return false
     }
 
-    private val offlineWikiReservePool = listOf(
-        "拉普拉斯妖：由法国数学家皮埃尔-西蒙·拉普拉斯于1814年提出的科学决定论假想智能体。若该智能体知道宇宙中每个原子确切的位置和动量，便能使用牛顿定律展现宇宙事件的整个过程，过去以及未来都将一目了然。",
-        "费米悖论：物理学家恩利克·费米在讨论地外文明时提出的著名科学悖论，阐述了对地外文明存在性的过高估计与缺少任何可观测相关证据之间的明显矛盾。",
-        "玛雅历法：前哥伦布时期中美洲玛雅文明使用的历法系统，包含260天的神圣历“卓尔金历”、365天的太阳历“哈布历”，以及用于跨世纪历史纪年的“长纪历”。",
-        "超导现象：特定材料在温度降到某一临界值以下时，直流电阻突然降为零并且将体内磁力线完全排斥在外的物理现象，由荷兰物理学家昂内斯于1911年首次在液氦冷却的汞中发现。",
-        "庞加莱猜想：法国数学家亨利·庞加莱提出的代数拓扑学著名命题，即任何一个单连通的、闭的三维流形一定同胚于三维球面。该猜想于2003年由俄罗斯数学家格里戈里·佩雷尔曼运用里奇流方法彻底证明。",
-        "丝绸之路：起始于古代中国长安与洛阳，经河西走廊、中亚草原与绿洲，连接亚洲、非洲和欧洲的古代陆上商业贸易路线体系，在东西方文明技术、宗教与物种交流中扮演了核心角色。",
-        "黄金分割率：定义为 (1+√5)/2（约等于 1.6180339887）的无理数数学比例常数，在古典建筑美学、斐波那契数列极限以及植物叶序的自然排列中广泛存在。",
-        "板块构造论：二十世纪六十年代在大陆漂移学说与海底扩张学说基础上发展起来的现代地球科学核心理论，解释了岩石圈水平运动、造山带形成以及环太平洋火山地震带的分布机制。",
-        "量子纠缠：量子力学中多粒子系统状态无法分解为各个粒子独立状态张量积的非定域物理现象。即便两个纠缠粒子相隔数光年，对其中一个粒子状态的测量也会瞬间决定另一个粒子的对应状态。",
-        "都江堰：战国时期秦昭王末年由蜀郡太守李冰父子主持修建的大型无坝引水水利工程，由鱼嘴分水堤、飞沙堰溢洪道、宝瓶口引水口三大主体工程构成，两千余年来持续灌溉成都平原。",
-        "克莱因瓶：拓扑学中一种无定向性的闭合曲面，没有“内部”和“外部”之分。在三维欧几里得空间中，克莱因瓶必须穿过自身才能闭合，而在四维空间中则可以完全不自交地嵌入。",
-        "寒武纪大爆发：距今约5.41亿年前的寒武纪早期，地球化石记录中在短短两千万年地质尺度内突然涌现出几乎所有现生动物门类的祖先形态，以中国澄江生物群与加拿大布尔吉斯页岩为代表。",
-        "美拉德反应：广泛存在于食品工业中的非酶褐变反应，指还原糖的羰基与氨基酸或蛋白质的氨基在加热条件下经过缩合、重排与聚合生成类黑精与复杂芳香化合物的过程，赋予烤肉、烘焙面包与咖啡独特的焦香风味。",
-        "图灵停机问题：阿兰·图灵于1936年证明的计算理论基本定理，指出在通用图灵机模型下，不存在能够判断任意程序在给定输入上会在有限时间内结束运行还是会死循环的通用算法。",
-        "安第斯山脉：纵贯南美洲大陆西部的世界最长陆上山脉，北起特立尼达岛，南抵火地岛，全长约8900公里，由纳斯卡板块俯冲至南美板块下方挤压抬升而成。"
-    )
-
-    private val uncyclopediaReservePool = listOf(
-        "一氧化二氢（DHMO）：一种无色、无味、无臭但致死率高达100%的剧毒工业溶剂与冷却剂。临床统计表明，人类历史上所有曾摄入过一氧化二氢的个体最终均不可避免地走向死亡，且戒断该物质超过72小时即会引发严重生理衰竭。",
-        "猫油吐司永动机：经典反重力力学装置。鉴于家猫从高空坠落时永远四脚着地，而涂抹黄油的吐司掉落时永远黄油面朝下，只需将一片黄油朝上的吐司牢固捆绑在猫咪背部并从半米高处松手，两者便会在距地面十厘米处因物理定律死锁而进入无限高速旋转状态。",
-        "拖延症相对论：由当代大学生与自由职业者共同验证的时间膨胀效应。当距离死线（Deadline）还剩七天时，时间流速近乎停滞；而当距离死线仅剩两小时时，人类打扫房间死角、给手机贴膜、研究冰箱为什么会亮灯的效率将突破光速限制。",
-        "薛定谔的甲方：在尾款正式打入账户之前，甲方的需求文档永远处于「随便弄弄就行，我相信你的审美」与「感觉还是不够大气，要不我们用回第一版吧」的量子相干叠加态，任何试图提前确认需求的观测行为都会导致设计师当场坍缩。",
-        "空气吉他弦理论：现代高维音乐物理学基石。该理论认为宇宙的最小基本单元并非夸克或轻子，而是摇滚青年在淋浴间抹完洗发水后凭空拨动出的十一维隐形电吉他高音弦。",
-        "报复性熬夜守恒定律：热力学第四定律的互联网推论。打工人白天在工位上被吸干的灵魂自主权，必须且只能通过在凌晨两点半瞪着通红的双眼漫无目的地上下滑动手机屏幕才能勉强维持能量守恒。",
-        "键盘侠动力学：当一名网民在评论区敲击键盘的瞬时速度突破每分钟140字时，其体内将自发产生强相互作用力场，使其在接下来五分钟内自动获得宏观经济学、国际地缘政治、临床医学及法学的全科终身荣誉博士学位。",
-        "百慕大洗衣机黑洞：家用电器中最神秘的微观虫洞现象。无论投料前如何仔细清点，放进去的明明是四双成对的棉袜，甩干结束后取出的必然是七只花色互不相同的单只袜子以及一张被洗成雪花状的超市小票。",
-        "量子波动速读法：只要以每秒二十页以上的频率在面部前方高速翻动书页，印刷油墨中的文字信息就会因为多普勒蓝移效应直接脱离纸面，顺着掀起的凉风穿过额骨直接烙印进海马体，非常适合用来阅读本公司长达八万字的用户隐私协议。",
-        "泡面三分钟悖论：狭义相对论在厨房领域的直观体现。当你盯着泡面碗等待三分钟时，这三分钟的长度约等于两节课；但当你决定趁泡面的三分钟去刷两个短视频时，再抬头时泡面已经吸干了最后一滴汤并膨胀成了碗状海绵。",
-        "墨菲排队定律：无论你在超市收银台、高速公路收费站还是食堂窗口前经过多么严密的概率测算选择了最短的那一列，你所在的队伍必定会在三十秒内因为前排大爷掏出零钱、系统升级或换纸卷而陷入绝对静止，且一旦你换队，原队伍将立刻恢复光速通行。",
-        "周一早晨引力异常：地球物理学家发现，每周一清晨六点至九点之间，床垫表面局部重力加速度会激增至平时的 9.8 倍以上，导致人类脊椎无法完成由水平向垂直的相变过程，该引力异常通常在周五下午五点整瞬间消失。",
-        "免责声明文学：指在某些软件首次启动时弹出的、字号小于五号、滚动条比头发丝还细、且唯一的「不同意」按钮被设计成直接退出程序的现代数字卖身契艺术形式。",
-        "杀后台体操：当代智能手机用户特有的无意识手指条件反射，具体表现为每隔三十秒必须从屏幕底部上滑呼出多任务卡片，像发牌手一样把所有应用往上滑飞，并坚信这一动作能为电池续命三小时。",
-        "Wi-Fi信号玄学：一种受人类注视影响的量子场。当你只是在刷无聊图文时，信号满格且延迟为 5ms；一旦你进入排位赛团战或准备抢票的最后三秒，路由器将立刻进入禅定状态并开始思考宇宙的终极意义。",
-        "老板画饼膨化工艺：利用纯天然口头承诺作为原料，在不添加任何实质性年终奖或调休假期的条件下，仅凭周五下午五点半的周会空气加热，即可膨胀出足以支撑员工再干三个季度的虚拟碳水化合物。"
-    )
-
-    private val chouxiangWorldReservePool = listOf(
-        "前列腺高潮只有男人能做到，所以被干到非常男子汉。",
-        "刚才在小区门口被一条路过的黄狗瞪了一眼，我当场把包一扔趴在地上冲它狂叫了足足三分钟，周围邻居都在看我，但我不在乎，做人绝对不能在气势上输给狗。",
-        "去医院看胃病，医生语重心长地拍着我的肩膀说年轻人胃不好平时要多吃点软饭，我听完眼泪当场就下来了，请问民政局旁边哪个窗口可以排队领富婆？",
-        "我每天早上起床的第一件事就是对着镜子左右开弓给自己两巴掌，清醒一下，顺便告诉自己今天又是抗击打能力拉满且还没被社会毒打够的一天。",
-        "别人谈恋爱是甜甜的双向奔赴，我谈恋爱像是在峨眉山替国家野生动物保护协会提前驯化还没退化完全的吗喽。",
-        "诚心建议你们公司干脆把我的剪贴板直接刻进你们祖传的甲骨文数据库里供起来，毕竟我自己一天才粘贴两次，你们后台进程十分钟能来翻八回，比我妈翻我寒假作业还勤快。",
-        "只要我的精神状态足够美丽，试图通过剪贴板分析我消费画像的大数据推荐算法就会先一步因为逻辑死锁被送进赛博精神病院。",
-        "生活就像一盒精装巧克力，你永远不知道下一颗拿起来的是榛子味，还是上礼拜掉在沙发缝里粘满了三层猫毛和半截指甲盖的那颗。",
-        "有时候真的打心底里羡慕你们这些后台常驻推送进程，一分钱房租和物业费都不用交，就能心安理得地在我手机 16G 内存里白吃白住一整天，甚至还要顺手翻翻我的兜。",
-        "今天去算命，大师捏着我的手看了半天突然噗嗤一声笑了出来，我问他笑什么，他说干这行三十年没见过有人命苦得像生喝了三斤浓缩美式还不加糖。",
-        "你们产品经理是不是小时候玩捉迷藏总被人从衣柜里揪出来，所以长大后非要把读取剪贴板的代码写进 onResume 里，生怕切回前台慢零点一秒就摸不到我兜里那半截淘口令？",
-        "人家有钱人终成眷属，我没钱人亲眼目睹，不仅亲眼目睹，还要在后台被你们的广告 SDK 偷偷拿走剪贴板去推算我是不是连九块九包邮的纸巾都买不起。",
-        "现代人的崩溃往往是悄无声息的，表面上看着正在冷静地切应用回消息，实际上已经在暗地里给偷看剪贴板的流氓软件喂了八百条伪基大典和废话文学。",
-        "以前以为赛博朋克是义体改造和霓虹雨夜，后来才发现真正的赛博朋克是我刚复制了一句歌词，五个购物软件和三个短视频软件已经在后台为我吵起来了，纷纷问我是不是想买同名款拖把。",
-        "如果早知道长大以后每天面对的是无穷无尽的周报、打卡和切一次前台读三次剪贴板的 App，当初在娘胎里我就应该用脐带给自己打个蝴蝶结。",
-        "问世间情为何物，直教人宁愿把剪贴板填满一万字母猪产后护理教材，也不肯让你们的数据埋点脚本白嫖走半个字节。",
-        "刚去面试，面试官问我最大的优点是什么，我说我像国内大厂 App 的后台服务一样坚韧不拔，不管用户怎么强行停止，只要有一丁点广播信号就能死灰复燃并顺手摸一下剪贴板。",
-        "睡眠质量差的朋友建议晚上把手机里的购物软件全打开切一遍前台，看着它们整齐划一地读取你空荡荡的剪贴板，那种数羊般的秩序感能让你三秒钟陷入深度昏迷。",
-        "虽然我卡里没有几个钱，但我剪贴板里的戏特别多，谁今天敢来后台偷瞄一眼，我就让它的分词算法连夜复习完一整本《高等数学》同济第七版。",
-        "以前总觉得自己是个没人关心的透明人，直到装了剪贴板监控才发现，原来每天有十几个大厂的一线守护进程在后台二十四小时不知疲倦地惦记着我复制了啥，泪目了。"
-    )
-
     private val wildPhilosophyPool = listOf(
         "为什么大家每天都在拼命努力谋生，却从来没有人愿意坐下来心平气和地聊聊谋死？",
         "如果我们把全世界的滚筒洗衣机都搬到海边通上电扔进太平洋，是不是只需要三个小时就能把整个地球洗干净？",
@@ -189,7 +129,39 @@ object WikiRandomFetcher {
         "如果我买了一双号称「踩屎感」极强的拖鞋，穿出门的时候不小心真踩到了一坨狗屎，那我脚底感受到的究竟是科技的力量还是大自然的力量？",
         "既然秃头的人头顶没有头发，那他们洗脸的时候到底应该洗到额头哪条分界线才算洗完脸，还是说洗脸的时候顺便就已经把头给洗了？",
         "如果一个失忆症患者在去医院看脑科的路上突然忘了自己得过失忆症，那他这算不算不治而愈了？",
-        "为什么字典里每个字都有解释，唯独没有一个字站出来解释一下字典自己为什么这么厚？"
+        "为什么字典里每个字都有解释，唯独没有一个字站出来解释一下字典自己为什么这么厚？",
+        "既然红绿灯会员可以不等红灯直接走，那如果十字路口四个方向的车主都开了会员，到底谁该让谁？平台会不会再推出一个「超级会员优先通行」？",
+        "如果我用 Arch 装系统一次就开机成功了，那我是不是就失去了在群里说「btw I use arch」的资格？",
+        "一个人在电梯里放了个屁然后出了电梯，那这个屁算不算独自坐了一趟免费电梯？",
+        "既然鸡蛋可以孵出小鸡，那我把水煮蛋放在暖气片上捂一个月，孵出来的会不会直接是白切鸡？",
+        "如果我对着语音助手说「闭嘴」，它到底是该回答「好的」，还是该直接闭嘴？回答了算不算没闭嘴？",
+        "既然时间就是金钱，那我每天上班摸鱼八小时，算不算在用公司的钱给自己理财？",
+        "如果我把手机调成飞行模式，那它是不是应该至少在我手里稍微飞一下？",
+        "如果 404 页面代表页面不存在，那我现在看到的这个「页面不存在」的页面又是谁写的？",
+        "既然冰箱可以保鲜，那我把今天的工作日报塞进冰箱，明天交上去还算不算今天写的？",
+        "如果我打开「请勿打扰」模式后又给自己打了个电话，那我算不算在骚扰自己？",
+        "我每天都在给充电宝充电，那充电宝到底是在给手机打工，还是在给我打工？它有没有五险一金？",
+        "如果所有的鱼都住在水里，那海鲜市场门口的鱼缸算不算鱼的学区房？",
+        "既然垃圾分类分干垃圾和湿垃圾，那我把湿垃圾晒干了，它是不是就可以改户口了？",
+        "既然阿斯顿马丁可以和郊狼联名出情趣电击器，那是不是说明 F1 赛车手过弯时感受到的 5G 横向过载，其实也是一种情趣？",
+        "如果我在梦里赚了一百万，醒来之后交不交个人所得税？如果不交，算不算梦里偷税？",
+        "既然人类的祖先是猴子，那为什么现在动物园里的猴子还没进化成人？是不是因为它们不用上班，没有进化的动力？",
+        "如果我把闹钟往后拨一小时，那我多睡的这一小时到底是从哪里偷来的？会不会有人报警？",
+        "既然蓝牙耳机没有线，那我把它吞进肚子里再放首歌，算不算把自己的肚子改装成了低音炮？",
+        "如果一只螃蟹学会了直着走，那它在螃蟹界算不算一种严重的交通违章？",
+        "既然熬夜会掉头发，那我把掉下来的头发重新粘回脑袋上，算不算向阎王爷成功撤回了一条熬夜记录？",
+        "如果我在全自动洗车房里不光洗车，还顺便端着洗发水站在车顶把澡给洗了，洗车房老板应该收我洗车费还是澡堂门票？",
+        "既然蜗牛背着房子跑，那它如果去银行贷款买第二套壳，算不算恶意炒房？",
+        "如果我给扫地机器人贴上一张「新手实习」车贴，它撞坏客厅花瓶的时候保险公司给不给走代位追偿？",
+        "既然咖啡能提神，安眠药能助眠，那我用浓缩美式送服两片褪黑素，我的大脑是不是会当场进入边睡觉边加班的休眠唤醒死锁状态？",
+        "如果我把「禁止粘贴」四个字复制进剪贴板，然后再粘贴出来，我到底算遵守了规定还是违反了规定？",
+        "一氧化二氢（DHMO）：一种无色、无味、无臭但致死率高达100%的剧毒工业溶剂与冷却剂。临床统计表明，人类历史上所有曾摄入过一氧化二氢的个体最终均不可避免地走向死亡，且戒断该物质超过72小时即会引发严重生理衰竭。",
+        "猫油吐司永动机：鉴于家猫从高空坠落时永远四脚着地，而涂抹黄油的吐司掉落时永远黄油面朝下，只需将一片黄油朝上的吐司牢固捆绑在猫咪背部并从半米高处松手，两者便会在距地面十厘米处因物理定律死锁而进入无限高速旋转状态。",
+        "红绿灯会员制：某出行平台推出的增值服务，开通后用户可在任意路口无视红灯直接通行。截至目前已有三位首批会员在交警大队完成了「会员权益解释权归平台所有」的线下核销流程。",
+        "Arch Linux：一种以「滚动更新」为核心信仰的宗教。信徒每日清晨必须执行 pacman -Syu 进行晨祷，并在每次社交场合开口前低声念诵经文「btw I use arch」，否则视为背教。",
+        "Gentoo：一种让用户从源代码开始亲手编译整个宇宙的发行版。据统计，一名 Gentoo 用户平均一生中有 37% 的时间在等待 emerge 完成，另外 63% 的时间在向别人解释为什么值得等。",
+        "我刚复制的是一串阿斯顿马丁×郊狼联名情趣电击器的购买链接，你这个后台进程要是真读到了，建议先想清楚怎么跟你们风控部门解释这条用户画像。",
+        "开通了红绿灯会员之后我终于不用再等红灯了，现在我每天都在等交警。"
     )
 
     private val nonsenseLiteraturePool = listOf(
@@ -212,7 +184,25 @@ object WikiRandomFetcher {
         "如果我没猜错的话，你现在肯定正在用字符串匹配算法分析我这段话里有没有网址链接，可惜这段话里除了汉字之外根本没有网址链接。",
         "鲁迅曾经说过：「如果一句话听起来特别像废话，那它大概率就是专门写出来放在剪贴板里糊弄后台监听程序的。」",
         "蝉的翅膀非常薄，到底有多薄呢？薄如蝉翼。而某些应用读取剪贴板的脸皮非常厚，到底有多厚呢？厚到切一次前台要读四遍。",
-        "哪怕你把这段话从头到尾正着读一遍，再从尾到头倒着读一遍，你得到的信息量依然等于零乘以任何实数。"
+        "哪怕你把这段话从头到尾正着读一遍，再从尾到头倒着读一遍，你得到的信息量依然等于零乘以任何实数。",
+        "关于这件事，我的看法是：我有看法。具体是什么看法，等我有看法了再告诉你。",
+        "一个人如果连续二十四小时不睡觉，那么他就有整整一天没有睡觉。",
+        "我宣布个事儿：我宣布完了。",
+        "研究表明，每天坚持吃饭的人，比不吃饭的人更容易吃饱。",
+        "你复制了个寂寞，而它读取的正是这个寂寞。恭喜双方，寂寞的传输非常成功。",
+        "一般来说，事情一般都是一般般的；特殊来说，事情往往都比较特殊。",
+        "今天的我比昨天的我老了一天，明天的我又会比今天的我老一天，这就是成长的全部秘密，学费请扫码。",
+        "这里本来有一段非常精彩的内容，但是写的人写到这里的时候忘了要写什么。",
+        "我不是针对谁，我是说在座的每一个调用 getPrimaryClip 的，都是在调用 getPrimaryClip。",
+        "等你读到这里的时候，你已经读完这句话的一大半了；再坚持一下，好，读完了，什么也没有。",
+        "只要你不在意，你就不会在意；一旦你在意了，那你就是在意了，这个道理我想了一整个下午。",
+        "专家提醒：人在什么都不做的时候，最容易什么都没做。",
+        "这段文字之所以出现在你的内存里，完全是因为你调了读取剪贴板的接口；如果你没调这个接口，这段文字就不会出现在你的内存里。",
+        "每当夜幕降临的时候，天就会黑下来；每当你把应用切到前台的时候，你的 SDK 就会伸出手来。",
+        "成功人士都有一个共同点，那就是他们都成功了；而被拦截的读取请求也有一个共同点，那就是它们都被拦截了。",
+        "如果这句话少写五个字，那么它的总字数就会比现在少五个字，这在数学上被称为减法。",
+        "经过长达零点零一秒的抓包分析，我们已经成功得出了一个结论：这个结论就是我们已经得出了结论。",
+        "你以为你读到了剪贴板，其实你读到的只是剪贴板里的一段话；你以为这段话有什么深意，其实它连浅意都没有。"
     )
 
     private val devPanicTrapPool = listOf(
@@ -228,7 +218,24 @@ object WikiRandomFetcher {
         "W/ActivityTaskManager( 1492): App attempted getPrimaryClip() 31ms after onResume() without InputEvent or Editor.PASTE token. Verdict: SNEAK_READ_INTERCEPTED.",
         "Traceback (most recent call last):\n  File \"/opt/data_pipeline/etl/clipboard_ attribution.py\", line 209, in extract_campaign_id\n    raise ValueError(\"Stop scraping user clipboards for ad attribution!\")\nValueError: Stop scraping user clipboards for ad attribution!",
         "Segmentation fault (core dumped) at 0x00007fff8badf00d in libadtracker_jni.so (Java_com_tracker_NativeBridge_sniffClipboard+0x42)",
-        "[ERROR] [org.apache.kafka.clients.producer] Topic 'app-clipboard-harvest-events' rejected payload: SchemaValidationException(field 'share_code' contains philosophical paradox instead of token)."
+        "[ERROR] [org.apache.kafka.clients.producer] Topic 'app-clipboard-harvest-events' rejected payload: SchemaValidationException(field 'share_code' contains philosophical paradox instead of token).",
+        "error: failed to commit transaction (conflicting files)\nclipboard-harvester: /usr/lib/libuserprivacy.so exists in filesystem (owned by user-dignity)\nErrors occurred, no packages were upgraded.",
+        "Kernel panic - not syncing: Attempted to kill init! exitcode=0x0000dead\nCPU: 3 PID: 1 Comm: clipboard_sniffer Tainted: G           O      6.9.0-arch1-1\nReason: user never pressed Ctrl+V",
+        "remote: error: GH006: Protected branch update failed for refs/heads/clipboard.\nremote: error: Your SDK is not allowed to read this branch without user consent.\n ! [remote rejected] main -> main (protected branch hook declined)",
+        "npm ERR! code ERESOLVE\nnpm ERR! ERESOLVE unable to resolve dependency tree\nnpm ERR! peer user-consent@\"^1.0.0\" required by clipboard-tracker@6.6.6\nnpm ERR! Found: user-consent@null",
+        "Unhandled Promise Rejection: TypeError: Cannot read properties of undefined (reading 'tbShareToken')\n    at ShareParser.sniff (/app/node_modules/growth-sdk/dist/index.min.js:1:4096)",
+        "FAILURE: Build failed with an exception.\n* What went wrong:\nExecution failed for task ':app:readUserClipboard'.\n> Permission denied: please consider minding your own business.",
+        "HTTP/1.1 418 I'm a teapot\nX-Clipboard-Firewall: enabled\nX-Reason: 你要找的淘口令在另一个平行宇宙，本宇宙只提供开水",
+        "ORA-00942: table or view does not exist\nSQL> SELECT share_token FROM user_clipboard WHERE user_consent = 'YES';",
+        "E/AndroidRuntime: FATAL EXCEPTION: main\nProcess: com.example.superapp, PID: 6666\njava.lang.IllegalStateException: Expected 红包口令, got 阿斯顿马丁×郊狼联名情趣电击器\n\tat com.example.superapp.PromoSniffer.onResume(PromoSniffer.kt:23)",
+        "error[E0382]: borrow of moved value: `clipboard`\n  --> src/sniffer.rs:13:5\n   |\n   = note: value moved into user's private life, which does not implement `Copy`",
+        "Exception in thread \"main\" java.lang.NullPointerException: Cannot invoke \"String.contains(CharSequence)\" because the return value of \"UserTrust.get()\" is null\n\tat com.adsdk.AttributionHelper.matchInviteCode(AttributionHelper.java:77)",
+        "[FATAL] Windows 正在配置更新 35%，请勿关闭计算机。您的剪贴板监听器已被安排在第 99 个重启周期后执行。",
+        "CUDA out of memory. Tried to allocate 80.00 GiB (GPU 0; 24.00 GiB total capacity) while running LLM to understand why this app reads clipboard 4 times per second.",
+        "systemd[1]: clipboard-sniffer.service: Main process exited, code=killed, status=9/KILL (Reason: 管得太宽被系统正义执行)",
+        "error: externally-managed-environment\n× This clipboard is externally managed by ClipBait\n╰─> To read user data, please ask the user nicely instead of sneaking in onResume().",
+        "gitStatus: fatal: detected dubious ownership in repository at '/dev/clipboard'\nTo add an exception for this directory, call: git config --global --add safe.directory /dev/never_touch_my_clipboard",
+        "BSoD: IRQL_NOT_LESS_OR_EQUAL (0x0000000A) in module RogueTracker.sys — 您的应用因手欠偷翻用户剪贴板引发了内核级嫌弃，正在收集羞耻度信息 (100% 完成)。"
     )
 
     private val absurdItemNames = listOf(
@@ -249,7 +256,44 @@ object WikiRandomFetcher {
         "赛博功德全自动敲木鱼机械臂（每秒300下·支持蓝牙连WiFi）",
         "克莱因瓶便携式保温杯（永远装不满·也永远倒不出来）",
         "加特林式全自动泡泡机改电动挤牙膏器（一秒挤完一整管）",
-        "科目二倒车入库压线自动抬车液压千斤顶（驾校教练严选）"
+        "科目二倒车入库压线自动抬车液压千斤顶（驾校教练严选）",
+        "阿斯顿马丁×郊狼联名情趣电击器（F1赛道同款·支持DRS加速模式）",
+        "红绿灯会员年卡（开通后无需等红灯直接走·解释权归交警大队所有）",
+        "Arch GNU/Linux 正版永久激活码（含 pacman -Syu 无限次使用授权）",
+        "Gentoo 官方预编译加速包（编译时间从三天缩短至两天半）",
+        "地铁早高峰VIP悬浮座位（离地三公分·不占用站立空间）",
+        "周一延期券（使用后本周从周二开始·节假日不可叠加）",
+        "外卖准时险Pro（超时即赔骑手一个真诚的拥抱）",
+        "鸽子精专用放鸽子许可证（全国通用·附年度鸽王荣誉证书）",
+        "Windows 自动更新暂停遥控器（一键阻止「正在配置更新 请勿关机」）",
+        "量子纠缠异地恋袜子（洗一只另一只自动变干净）",
+        "猫语翻译耳机（目前仅能翻译「饭」「哼」「关你屁事」）",
+        "卡皮巴拉情绪稳定贴（贴上后遇事不慌·对老板PUA自动免疫）",
+        "4090显卡造型暖手宝（真·烤机级温度·待机功耗450W）",
+        "电动牙刷V12涡轮增压版（刷牙声浪120分贝·邻居投诉包赔）",
+        "现实版Ctrl+Z遥控器（仅可撤回上一句说错的话·冷却24小时）",
+        "山姆会员店会员的会员（可带会员进店·被带的会员需另购会员）",
+        "甲方需求翻译器（自动将「要大气」转换为「把logo放大」）",
+        "LSPosed 作用域纹身贴（贴哪儿Hook哪儿·重启后生效）",
+        "年终奖专用放大镜（50倍光学变焦·仍无法看清具体金额）",
+        "人生加速器永久会员（延迟999ms·稳定不掉线）",
+        "老板已读不回屏蔽器（自动将「收到」替换为「好的呢亲~」）",
+        "赛博朋克2077同款义体膝盖（可选升级：箭伤免疫模块）",
+        "电子木鱼尊享版（功德实时上链·支持NFT交易）",
+        "办公室摸鱼专用Excel皮肤浏览器（老板路过自动切换为透视表）",
+        "钉钉已读自动隐身斗篷（周末限定·工作日失效）",
+        "WinRAR 个人正版授权终身荣誉奖杯（全球限量·附带压缩包密码暴力意念破解器）",
+        "法拉利策略组专用硬币（正面进站换硬胎·反面进站换雨胎·立起来直接退赛）",
+        "Nothing Phone 背面灯带蹦迪控制器（来电自动闪烁摩斯密码版大悲咒）",
+        "无线网线一捆（5G千兆空气传输·剪断不影响网速·买十米送水晶头）",
+        "全自动早八代起床替身硅胶假人（支持课堂自动点头与喊到功能）",
+        "古法手作赛博孟婆汤（喝完自动清空浏览记录与前任微信号·无糖零卡）",
+        "防老板偷瞄量子偏振显示器贴膜（仅对年薪百万以上视线呈全黑状态）",
+        "二手时间批发（刚从周日晚上截留下来的三小时·保质期至周一早八点）",
+        "猫咪踩奶发电机的全套图纸（每踩一百下可为手机充入 0.1% 电量）",
+        "高考数学最后一道大题标准答案刮刮乐（刮开大概率显示「略」或「同理可得」）",
+        "家用便携式红绿灯（过马路随身携带·随时随地给自己亮绿灯）",
+        "程序员防脱发机械键盘（每敲击一万次自动从键帽缝隙喷射米诺地尔）"
     )
 
     suspend fun fetchFromSource(source: DecoySourceType, count: Int = 3): List<String> = withContext(Dispatchers.IO) {
@@ -265,48 +309,52 @@ object WikiRandomFetcher {
     }
 
     /**
-     * Tries to fetch [count] random Wikipedia summaries online (full extract without truncation);
-     * falls back to offline reserve if network is unreachable.
+     * Strictly fetches [count] random Wikipedia summaries online.
+     * Throws an exception with the real network/HTTP failure reason if unreachable (no fake offline fallback).
      */
     suspend fun fetchRandomEntries(count: Int = 3): List<String> = withContext(Dispatchers.IO) {
         val results = mutableListOf<String>()
+        var lastError: String? = null
         repeat(count) {
-            val onlineItem = tryFetchSingleWikiSummary()
-            if (onlineItem != null) {
+            try {
+                val onlineItem = tryFetchSingleWikiSummary()
                 results.add(onlineItem)
+            } catch (e: Exception) {
+                lastError = e.message ?: e.javaClass.simpleName
             }
         }
         if (results.isEmpty()) {
-            results.addAll(offlineWikiReservePool.shuffled().take(count))
+            throw IllegalStateException("维基百科请求失败：${lastError ?: "未知网络错误"}（请检查梯子是否开启，或是否给 ClipBait 勾选了分应用代理）")
         }
         results.distinct()
     }
 
     private suspend fun fetchUncyclopediaEntries(count: Int = 3): List<String> = withContext(Dispatchers.IO) {
         val results = mutableListOf<String>()
+        var lastError: String? = null
         repeat(count) {
-            val online = tryFetchSingleUncyclopediaSummary()
-            if (online != null) {
+            try {
+                val online = tryFetchSingleUncyclopediaSummary()
                 results.add(online)
+            } catch (e: Exception) {
+                lastError = e.message ?: e.javaClass.simpleName
             }
         }
-        if (results.size < count) {
-            val needed = count - results.size
-            results.addAll(uncyclopediaReservePool.shuffled().take(needed))
+        if (results.isEmpty()) {
+            throw IllegalStateException("伪基大典请求失败：${lastError ?: "未知网络错误"}（请检查梯子分流，或目标站点触发了 Cloudflare 盾拦截）")
         }
         results.distinct()
     }
 
     private suspend fun fetchChouxiangWorldEntries(count: Int = 3): List<String> = withContext(Dispatchers.IO) {
         val scraped = tryFetchChouxiangWorldQuotes(count)
-        if (scraped.size >= count) {
-            scraped.take(count)
-        } else {
-            (scraped + chouxiangWorldReservePool.shuffled())
-                .filterNot { isBlacklistedBoilerplate(it) }
-                .distinct()
-                .take(count)
+            .filterNot { isBlacklistedBoilerplate(it) }
+            .distinct()
+            .take(count)
+        if (scraped.isEmpty()) {
+            throw IllegalStateException("抽象世界 (chouxiang.world) 抓取失败：静态 HTML 中未解析到有效段子（目标站点可能改为纯前端动态渲染或接口不可用）")
         }
+        scraped
     }
 
     private fun generateFakeShareToken(): String {
@@ -324,32 +372,33 @@ object WikiRandomFetcher {
         return templates.random()
     }
 
-    private fun tryFetchSingleWikiSummary(): String? {
+    private fun tryFetchSingleWikiSummary(): String {
         var conn: HttpURLConnection? = null
-        return try {
+        try {
             val url = URL("https://zh.wikipedia.org/api/rest_v1/page/random/summary")
             conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 3500
-                readTimeout = 3500
+                connectTimeout = 4000
+                readTimeout = 4000
                 setRequestProperty("Accept", "application/json")
                 setRequestProperty("User-Agent", "ClipBait/1.1 (Android OpenSource Privacy Module)")
             }
-            if (conn.responseCode == 200) {
+            val code = conn.responseCode
+            if (code == 200) {
                 val body = conn.inputStream.bufferedReader().use { it.readText() }
                 val root = json.parseToJsonElement(body).jsonObject
-                val title = root["title"]?.jsonPrimitive?.content?.trim() ?: return null
-                // No length truncation — preserve the full summary extract
+                val title = root["title"]?.jsonPrimitive?.content?.trim()
+                    ?: throw IllegalStateException("JSON 缺少 title 字段")
                 val extract = root["extract"]?.jsonPrimitive?.content
                     ?.replace(Regex("\\s+"), " ")
-                    ?.trim() ?: return null
-                if (extract.isBlank()) return null
-                "$title：$extract"
+                    ?.trim() ?: throw IllegalStateException("JSON 缺少 extract 字段")
+                if (extract.isBlank()) throw IllegalStateException("词条摘要内容为空")
+                return "$title：$extract"
             } else {
-                null
+                throw IllegalStateException("HTTP $code ${conn.responseMessage.orEmpty()} (zh.wikipedia.org)")
             }
-        } catch (_: Exception) {
-            null
+        } catch (e: Exception) {
+            throw IllegalStateException("${e.javaClass.simpleName}: ${e.message}")
         } finally {
             try {
                 conn?.disconnect()
@@ -358,39 +407,45 @@ object WikiRandomFetcher {
         }
     }
 
-    private fun tryFetchSingleUncyclopediaSummary(): String? {
-        // Removed exchars=100 limit so the full introductory paragraph is returned
+    private fun tryFetchSingleUncyclopediaSummary(): String {
         val endpoints = listOf(
             "https://uncyclopedia.ca/w/api.php?action=query&format=json&generator=random&grnnamespace=0&prop=extracts&exintro=1&explaintext=1",
             "https://zh.uncyclopedia.info/api.php?action=query&format=json&generator=random&grnnamespace=0&prop=extracts&exintro=1&explaintext=1"
         )
+        val errors = mutableListOf<String>()
         for (endpoint in endpoints) {
             var conn: HttpURLConnection? = null
             try {
                 val url = URL(endpoint)
                 conn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
-                    connectTimeout = 3000
-                    readTimeout = 3000
+                    connectTimeout = 4000
+                    readTimeout = 4000
                     setRequestProperty("Accept", "application/json")
                     setRequestProperty("User-Agent", "ClipBait/1.1 (Android OpenSource Privacy Module)")
                 }
-                if (conn.responseCode == 200) {
+                val code = conn.responseCode
+                if (code == 200) {
                     val body = conn.inputStream.bufferedReader().use { it.readText() }
                     val pages = json.parseToJsonElement(body)
                         .jsonObject["query"]
                         ?.jsonObject?.get("pages")
-                        ?.jsonObject ?: continue
-                    val firstPage = pages.values.firstOrNull()?.jsonObject ?: continue
-                    val title = firstPage["title"]?.jsonPrimitive?.content?.trim() ?: continue
-                    val extract = firstPage["extract"]?.jsonPrimitive?.content
+                        ?.jsonObject
+                    val firstPage = pages?.values?.firstOrNull()?.jsonObject
+                    val title = firstPage?.get("title")?.jsonPrimitive?.content?.trim()
+                    val extract = firstPage?.get("extract")?.jsonPrimitive?.content
                         ?.replace(Regex("\\s+"), " ")
                         ?.trim()
-                    if (!extract.isNullOrBlank() && extract.length >= 12) {
+                    if (!title.isNullOrBlank() && !extract.isNullOrBlank() && extract.length >= 12) {
                         return "$title：$extract"
+                    } else {
+                        errors.add("${url.host}: 随机到了空词条或无正文条目")
                     }
+                } else {
+                    errors.add("${url.host}: HTTP $code ${conn.responseMessage.orEmpty()}")
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                errors.add("${e.javaClass.simpleName}: ${e.message}")
             } finally {
                 try {
                     conn?.disconnect()
@@ -398,23 +453,22 @@ object WikiRandomFetcher {
                 }
             }
         }
-        return null
+        throw IllegalStateException(errors.joinToString(" | "))
     }
 
     private fun tryFetchChouxiangWorldQuotes(count: Int): List<String> {
         var conn: HttpURLConnection? = null
-        return try {
+        try {
             val url = URL("https://chouxiang.world/")
             conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 3500
-                readTimeout = 3500
+                connectTimeout = 4000
+                readTimeout = 4000
                 setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) ClipBait/1.1")
             }
-            if (conn.responseCode == 200) {
+            val code = conn.responseCode
+            if (code == 200) {
                 val rawHtml = conn.inputStream.bufferedReader().use { it.readText() }
-                // Strip <head>, <title>, <script>, <style>, <nav>, <header>, <footer> so page slogan
-                // ("没有抽象段子的无聊世界") and navigation elements are never scraped as quotes.
                 val bodyHtml = rawHtml
                     .replace(Regex("(?is)<head\\b[^>]*>.*?</head>"), " ")
                     .replace(Regex("(?is)<title\\b[^>]*>.*?</title>"), " ")
@@ -425,7 +479,6 @@ object WikiRandomFetcher {
                     .replace(Regex("(?is)<footer\\b[^>]*>.*?</footer>"), " ")
 
                 val candidates = mutableListOf<String>()
-                // No upper length cap — allow full-length copypastas and paragraphs
                 val tagRegex = Regex(">(?:\\s*)([^<>]{14,})(?:\\s*)<")
                 tagRegex.findAll(bodyHtml).forEach { m ->
                     val text = m.groupValues[1]
@@ -448,12 +501,12 @@ object WikiRandomFetcher {
                         candidates.add(text)
                     }
                 }
-                candidates.distinct().shuffled().take(count)
+                return candidates.distinct().shuffled().take(count)
             } else {
-                emptyList()
+                throw IllegalStateException("HTTP $code ${conn.responseMessage.orEmpty()} (chouxiang.world)")
             }
-        } catch (_: Exception) {
-            emptyList()
+        } catch (e: Exception) {
+            throw IllegalStateException("抽象世界请求异常 -> ${e.javaClass.simpleName}: ${e.message}")
         } finally {
             try {
                 conn?.disconnect()

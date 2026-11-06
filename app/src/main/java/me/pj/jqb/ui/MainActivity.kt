@@ -177,7 +177,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize(),
-                    beyondViewportPageCount = 0
+                    beyondViewportPageCount = 1
                 ) { page ->
                     when (page) {
                         0 -> WallOfShameScreen(viewModel = viewModel)

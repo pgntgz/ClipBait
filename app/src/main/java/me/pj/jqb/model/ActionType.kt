@@ -118,10 +118,10 @@ enum class TriggerType(
     ),
     FOREGROUND_POLL(
         "foreground_poll",
-        "在前台读",
-        "Foreground Read",
-        "应用在前台时读的。也有可能是你自己按了粘贴——在「伪装」和「阻断」模式下，你的粘贴也会被拦。",
-        "Read while in the foreground. In Spoof or Block mode, even manual pastes are intercepted.",
+        "前台无粘贴偷读",
+        "Unsolicited Foreground Probe",
+        "虽然你正在用这个应用（比如点输入框打字或发消息），但你根本没长按或点粘贴菜单，它却趁机去摸了剪贴板。",
+        "You were using the app (e.g. typing or tapping the input box), but it probed the clipboard without a paste action.",
         false
     ),
     BACKGROUND_SILENT(

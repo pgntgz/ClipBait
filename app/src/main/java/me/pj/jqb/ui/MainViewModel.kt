@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -75,6 +77,14 @@ class MainViewModel : ViewModel() {
     val configState: StateFlow<ConfigModel> = configRepo.configState
     val hookState: StateFlow<HookState> = app.hookState
 
+    val hapticEnabledState: StateFlow<Boolean> = configState
+        .map { it.settings.auditLog.hapticEnabled }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    private val _hasUsagePermission = MutableStateFlow(false)
+    val hasUsagePermissionState: StateFlow<Boolean> = _hasUsagePermission.asStateFlow()
+
     // Resolve any legacy record whose appName was saved as packageName or has [百科] prefix
     val auditRecords: StateFlow<List<AuditRecord>> = dao.getRecent(200)
         .map { list ->
@@ -88,6 +98,7 @@ class MainViewModel : ViewModel() {
                 }
             }
         }
+        .flowOn(Dispatchers.IO)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val totalInterceptCount: StateFlow<Int> = dao.getTotalCount()
@@ -113,15 +124,23 @@ class MainViewModel : ViewModel() {
                 stat.copy(appName = resolvedName)
             }
         }
+        .flowOn(Dispatchers.IO)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // "最爱读取积分榜" — combines intercept records with foreground usage time
+    private val favoriteBoardConfigFlow = configState
+        .map { it.settings.auditLog.favoriteLeaderboardEnabled to it.settings.language }
+        .distinctUntilChanged()
+
+    // "最爱读取积分榜" — combines intercept records with foreground usage time on Dispatchers.IO
     val favoriteOffenders: StateFlow<List<FavoriteOffenderStat>> = combine(
         topOffenders,
         auditRecords,
-        configState
-    ) { offenders, records, cfg ->
-        val isEn = resolveIsEnglish(cfg.settings.language)
+        favoriteBoardConfigFlow
+    ) { offenders, records, (favEnabled, lang) ->
+        if (!favEnabled || offenders.isEmpty()) {
+            return@combine emptyList()
+        }
+        val isEn = resolveIsEnglish(lang)
         val usageMapMs = querySevenDayUsageMapMs()
         offenders.map { stat ->
             val appRecords = records.filter { it.packageName == stat.packageName }
@@ -163,7 +182,9 @@ class MainViewModel : ViewModel() {
                 scoreDetail = detail
             )
         }.sortedByDescending { it.favoriteScore }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+        .flowOn(Dispatchers.IO)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _installedApps = MutableStateFlow<List<AppItem>>(emptyList())
     val installedApps: StateFlow<List<AppItem>> = _installedApps.asStateFlow()
@@ -178,10 +199,15 @@ class MainViewModel : ViewModel() {
     val isScanningSmart: StateFlow<Boolean> = _isScanningSmart.asStateFlow()
 
     init {
+        refreshUsagePermissionState()
         loadInstalledApps()
         recheckHookState()
         pullPendingAudits()
         pruneOldAuditLogs()
+    }
+
+    fun refreshUsagePermissionState() {
+        _hasUsagePermission.value = hasUsageStatsPermission()
     }
 
     fun hasUsageStatsPermission(): Boolean {
@@ -212,6 +238,7 @@ class MainViewModel : ViewModel() {
 
     fun recheckHookState() {
         viewModelScope.launch {
+            refreshUsagePermissionState()
             configRepo.broadcastConfigToSystemServer()
             pullPendingAudits()
             delay(1200)
@@ -220,6 +247,7 @@ class MainViewModel : ViewModel() {
     }
 
     fun pullPendingAudits() {
+        refreshUsagePermissionState()
         try {
             val intent = Intent(AuditLogReceiver.ACTION_PULL_PENDING_LOGS).apply {
                 setPackage("android")
@@ -250,6 +278,17 @@ class MainViewModel : ViewModel() {
             val pm = app.packageManager
             val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
 
+            // Build O(1) lookup map for configured rules once instead of O(N*M) scans
+            val currentCfg = configRepo.getConfig()
+            val defaultAction = ActionType.fromKey(currentCfg.settings.defaultAction)
+            val ruleMap = HashMap<String, ActionType>(currentCfg.rules.size * 2)
+            for (rule in currentCfg.rules) {
+                val act = ActionType.fromKey(rule.action)
+                for (pkgName in rule.packageNames) {
+                    ruleMap[pkgName] = act
+                }
+            }
+
             val items = packages.mapNotNull { appInfo ->
                 if (appInfo.packageName == app.packageName) return@mapNotNull null
 
@@ -258,16 +297,10 @@ class MainViewModel : ViewModel() {
                 } catch (_: Exception) {
                     appInfo.packageName
                 }
-                val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                val action = configRepo.getActionForPackage(appInfo.packageName)
+                AppIconCache.cacheLabel(appInfo.packageName, label)
 
-                // Backfill legacy database records that stored packageName as appName
-                if (label != appInfo.packageName) {
-                    try {
-                        dao.fixLegacyAppName(appInfo.packageName, label)
-                    } catch (_: Exception) {
-                    }
-                }
+                val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                val action = ruleMap[appInfo.packageName] ?: defaultAction
 
                 AppItem(
                     packageName = appInfo.packageName,
@@ -284,9 +317,16 @@ class MainViewModel : ViewModel() {
             _installedApps.value = items
             _isLoadingApps.value = false
 
-            // Pre-warm icons for configured & top non-system apps on background thread
-            items.take(40).forEach { item ->
-                AppIconCache.loadIconAsync(app, item.packageName)
+            // Pre-warm icons for all user apps first, then system apps in background so long scrolling never stutters
+            for (item in items) {
+                if (!item.isSystemApp || item.action != ActionType.DIRECT) {
+                    AppIconCache.loadIconAsync(app, item.packageName)
+                }
+            }
+            for (item in items) {
+                if (item.isSystemApp && item.action == ActionType.DIRECT) {
+                    AppIconCache.loadIconAsync(app, item.packageName)
+                }
             }
         }
     }
@@ -395,6 +435,30 @@ class MainViewModel : ViewModel() {
     fun setShowInterceptToast(enabled: Boolean) {
         viewModelScope.launch {
             configRepo.setShowInterceptToast(enabled)
+        }
+    }
+
+    fun setInterceptAlertMode(mode: String) {
+        viewModelScope.launch {
+            configRepo.setInterceptAlertMode(mode)
+        }
+    }
+
+    fun previewInterceptAlert(mode: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val sampleDecoy = configRepo.getConfig().decoys.firstOrNull()?.pool?.randomOrNull()
+                ?: "一氧化二氢：一种无色无味但致死率高达100%的剧毒工业溶剂。"
+            AuditLogReceiver.triggerAlertForRecord(
+                context = app,
+                packageName = "com.tencent.mm",
+                appName = AppIconCache.resolveLabel(app, "com.tencent.mm", "微信"),
+                actionType = "SPOOFED",
+                triggerReason = TriggerType.FOREGROUND_POLL.code,
+                spoofedPayload = sampleDecoy,
+                systemAlertShown = false,
+                forceTest = true,
+                overrideMode = mode
+            )
         }
     }
 

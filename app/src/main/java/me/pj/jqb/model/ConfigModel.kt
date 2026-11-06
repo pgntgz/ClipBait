@@ -65,11 +65,22 @@ data class AuditLogConfig(
     val favoriteLeaderboardEnabled: Boolean = false,
     @SerialName("show_intercept_toast")
     val showInterceptToast: Boolean = false,
+    // "off" | "toast" | "notification" | "dialog"
+    @SerialName("intercept_alert_mode")
+    val interceptAlertMode: String = "off",
     @SerialName("confetti_enabled")
     val confettiEnabled: Boolean = true,
     @SerialName("haptic_enabled")
     val hapticEnabled: Boolean = true
-)
+) {
+    fun effectiveAlertMode(): String {
+        return when {
+            interceptAlertMode in setOf("toast", "notification", "dialog") -> interceptAlertMode
+            showInterceptToast -> "toast"
+            else -> "off"
+        }
+    }
+}
 
 @Immutable
 @Serializable

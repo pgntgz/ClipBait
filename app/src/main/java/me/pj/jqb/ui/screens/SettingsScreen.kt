@@ -1,9 +1,15 @@
 package me.pj.jqb.ui.screens
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -45,6 +51,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -75,6 +82,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import me.pj.jqb.AppInfo
 import me.pj.jqb.HookState
 import me.pj.jqb.model.ActionType
@@ -90,10 +98,27 @@ fun SettingsScreen(viewModel: MainViewModel) {
     val context = LocalContext.current
     val view = LocalView.current
     val hookState by viewModel.hookState.collectAsState()
+    val hasUsagePermission by viewModel.hasUsagePermissionState.collectAsState()
     val config by viewModel.configState.collectAsState()
     val isEn = isEnglishLocale()
 
     val hapticEnabled = config.settings.auditLog.hapticEnabled
+    val currentAlertMode = config.settings.auditLog.effectiveAlertMode()
+
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            viewModel.setInterceptAlertMode("notification")
+        } else {
+            Toast.makeText(
+                context,
+                if (isEn) "Notification permission denied; switched to Toast mode" else "未授予通知权限，已为你切回 Toast 提醒",
+                Toast.LENGTH_SHORT
+            ).show()
+            viewModel.setInterceptAlertMode("toast")
+        }
+    }
 
     var resumeWindowMs by remember(config.settings.smartDetect.resumeWindowMs) {
         mutableFloatStateOf(config.settings.smartDetect.resumeWindowMs.toFloat())
@@ -515,19 +540,138 @@ fun SettingsScreen(viewModel: MainViewModel) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        SettingToggleRow(
-                            icon = Icons.Outlined.NotificationsActive,
-                            title = tr("抓现行时弹 Toast 当场点名", "Live Intercept Toast"),
-                            subtitle = tr(
-                                "平时用手机时，只要有应用在后台或刚打开时摸剪贴板被拦下，就弹个小提示告诉你。",
-                                "Show a brief Toast notification whenever an app is caught reading your clipboard."
-                            ),
-                            checked = config.settings.auditLog.showInterceptToast,
-                            onCheckedChange = {
-                                view.tickHaptic(hapticEnabled)
-                                viewModel.setShowInterceptToast(it)
-                            }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Outlined.NotificationsActive,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = tr("抓现行时当场点名提醒", "Real-Time Intercept Alert"),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        val alertModeDesc = when (currentAlertMode) {
+                            "toast" -> tr(
+                                "已开启「弹 Toast」：每当有应用偷读剪贴板被拦下或塞假词，屏幕底部弹出一条轻量气泡提示。",
+                                "Toast active: Shows a brief bottom pill toast whenever an app is blocked or fed a decoy."
+                            )
+                            "notification" -> tr(
+                                "已开启「发通知」：抓到偷读时在状态栏弹出横幅通知，展示伸手时机与投喂的假词内容。",
+                                "Notification active: Posts a status-bar notification with trigger scenario and decoy preview."
+                            )
+                            "dialog" -> tr(
+                                "已开启「系统弹窗」：直接由系统服务弹出原生 AOSP 样式提示框当场处刑（4.5秒后自动收起，点外部随时关）。",
+                                "System Dialog active: Pops up a native AOSP-style system alert dialog right over the offending app (auto-closes in 4.5s)."
+                            )
+                            else -> tr(
+                                "默认安静拦截不打扰。你也可以选抓现行时弹 Toast、发状态栏通知、或者直接弹系统样式提示框：",
+                                "Silent by default. Optionally show a Toast, status-bar notification, or native system alert dialog:"
+                            )
+                        }
+                        Text(
+                            text = alertModeDesc,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline
                         )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val alertOptions = listOf(
+                            "off" to tr("不提醒", "Off"),
+                            "toast" to tr("弹 Toast", "Toast"),
+                            "notification" to tr("发通知", "Notify"),
+                            "dialog" to tr("系统弹窗", "Dialog")
+                        )
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            alertOptions.forEachIndexed { index, (modeKey, label) ->
+                                SegmentedButton(
+                                    modifier = Modifier.weight(1f),
+                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = alertOptions.size),
+                                    selected = currentAlertMode == modeKey,
+                                    onClick = {
+                                        view.tickHaptic(hapticEnabled)
+                                        if (modeKey == "notification" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                            val granted = ContextCompat.checkSelfPermission(
+                                                context,
+                                                Manifest.permission.POST_NOTIFICATIONS
+                                            ) == PackageManager.PERMISSION_GRANTED
+                                            if (!granted) {
+                                                notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                                return@SegmentedButton
+                                            }
+                                        }
+                                        viewModel.setInterceptAlertMode(modeKey)
+                                    },
+                                    label = {
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    }
+                                )
+                            }
+                        }
+
+                        if (currentAlertMode != "off") {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            FilledTonalButton(
+                                onClick = {
+                                    view.tickHaptic(hapticEnabled, confirm = true)
+                                    if (currentAlertMode == "dialog") {
+                                        // Show instant native AOSP-style AlertDialog preview right on the Activity context
+                                        // so the user can see the exact system style even before rebooting!
+                                        val sampleDecoy = config.decoys.firstOrNull()?.pool?.randomOrNull()
+                                            ?: "一氧化二氢：一种无色无味但致死率高达100%的剧毒工业溶剂。"
+                                        val previewDecoy = if (sampleDecoy.length > 60) sampleDecoy.take(60) + "…" else sampleDecoy
+                                        val nightMode = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                                            Configuration.UI_MODE_NIGHT_YES
+                                        val themeRes = if (nightMode) {
+                                            android.R.style.Theme_DeviceDefault_Dialog_Alert
+                                        } else {
+                                            android.R.style.Theme_DeviceDefault_Light_Dialog_Alert
+                                        }
+                                        val title = if (isEn) "🛡️ ClipBait Intercept Alert" else "🛡️ ClipBait 抓现行系统提示"
+                                        val body = if (isEn) {
+                                            "App: WeChat (com.tencent.mm)\nBehavior: Read in foreground (no paste)\nAction: Spoofed with decoy phrase\nDecoy: \"$previewDecoy\""
+                                        } else {
+                                            "伸手应用：微信 (com.tencent.mm)\n触发时机：在前台读\n处置结果：已塞入伪装假词糊弄\n投喂内容：「$previewDecoy」"
+                                        }
+                                        try {
+                                            val dlg = android.app.AlertDialog.Builder(context, themeRes)
+                                                .setTitle(title)
+                                                .setMessage(body)
+                                                .setCancelable(true)
+                                                .setPositiveButton(if (isEn) "Got it" else "知道了") { d, _ -> d.dismiss() }
+                                                .create()
+                                            dlg.setCanceledOnTouchOutside(true)
+                                            dlg.show()
+                                        } catch (_: Throwable) {
+                                            viewModel.previewInterceptAlert(currentAlertMode)
+                                        }
+                                    } else {
+                                        viewModel.previewInterceptAlert(currentAlertMode)
+                                    }
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.NotificationsActive,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = tr("点我试一下提醒效果", "Test Current Alert Style"),
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -584,7 +728,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
                             )
                         }
 
-                        if (favoriteEnabled && !viewModel.hasUsageStatsPermission()) {
+                        if (favoriteEnabled && !hasUsagePermission) {
                             Spacer(modifier = Modifier.height(8.dp))
                             OutlinedButton(
                                 onClick = {

@@ -88,8 +88,7 @@ fun AppRulesScreen(viewModel: MainViewModel) {
     val isLoading by viewModel.isLoadingApps.collectAsState()
     val smartDetectedApps by viewModel.smartDetectedApps.collectAsState()
     val isScanningSmart by viewModel.isScanningSmart.collectAsState()
-    val config by viewModel.configState.collectAsState()
-    val hapticEnabled = config.settings.auditLog.hapticEnabled
+    val hapticEnabled by viewModel.hapticEnabledState.collectAsState()
     val isEn = isEnglishLocale()
 
     var searchQuery by remember { mutableStateOf("") }
@@ -100,6 +99,10 @@ fun AppRulesScreen(viewModel: MainViewModel) {
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+
+    val configuredCount = remember(apps) {
+        apps.count { it.action != ActionType.DIRECT }
+    }
 
     val filteredApps = remember(apps, searchQuery, filterConfiguredOnly, hideSystemApps) {
         apps.filter { item ->
@@ -292,7 +295,6 @@ fun AppRulesScreen(viewModel: MainViewModel) {
                     )
                 }
                 item {
-                    val configuredCount = apps.count { it.action != ActionType.DIRECT }
                     FilterChip(
                         selected = filterConfiguredOnly,
                         onClick = {
@@ -356,8 +358,7 @@ fun AppRulesScreen(viewModel: MainViewModel) {
                             appItem = appItem,
                             onActionSelected = { newAction ->
                                 viewModel.setAppAction(appItem.packageName, newAction)
-                            },
-                            modifier = Modifier.animateItem()
+                            }
                         )
                     }
                 }
@@ -463,7 +464,8 @@ fun SmartClassifierBottomSheet(
                 ) {
                     items(
                         items = items,
-                        key = { it.packageName }
+                        key = { it.packageName },
+                        contentType = { "smart_detect_item" }
                     ) { item ->
                         Card(
                             modifier = Modifier
@@ -555,6 +557,9 @@ fun SmartClassifierBottomSheet(
     }
 }
 
+private val AppRuleCardShape = RoundedCornerShape(16.dp)
+private val ActionBadgeShape = RoundedCornerShape(6.dp)
+
 @Composable
 fun AppRuleCard(
     appItem: AppItem,
@@ -567,7 +572,7 @@ fun AppRuleCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
-        shape = RoundedCornerShape(16.dp)
+        shape = AppRuleCardShape
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
@@ -599,7 +604,7 @@ fun AppRuleCard(
                         Spacer(modifier = Modifier.width(8.dp))
                         if (appItem.action != ActionType.DIRECT) {
                             Surface(
-                                shape = RoundedCornerShape(6.dp),
+                                shape = ActionBadgeShape,
                                 color = when (appItem.action) {
                                     ActionType.SMART -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
                                     ActionType.SPOOF -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.65f)

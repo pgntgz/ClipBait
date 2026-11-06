@@ -166,11 +166,9 @@ fun ConfigScreen(viewModel: MainViewModel) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // 1. Decoys & Multi-Source Workshop Trigger Card
-            item {
+            item(key = "decoy_pool_card", contentType = "decoy_pool_card") {
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .animateContentSize(),
+                    modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer
                     ),
@@ -336,11 +334,9 @@ fun ConfigScreen(viewModel: MainViewModel) {
             }
 
             // 2. Collapsible JSON Editor Card for backup / manual editing
-            item {
+            item(key = "raw_json_card", contentType = "raw_json_card") {
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .animateContentSize(),
+                    modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerLow
                     ),

@@ -129,6 +129,7 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
     val todayCount by viewModel.todayInterceptCount.collectAsState()
     val topOffenders by viewModel.topOffenders.collectAsState()
     val favoriteOffenders by viewModel.favoriteOffenders.collectAsState()
+    val hasUsagePermission by viewModel.hasUsagePermissionState.collectAsState()
     val config by viewModel.configState.collectAsState()
 
     val deepAnalysisEnabled = config.settings.auditLog.deepAnalysis
@@ -141,6 +142,16 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
     var selectedPackageForSheet by remember { mutableStateOf<String?>(null) }
     var autoConfettiInSheet by remember { mutableStateOf(false) }
     var confettiBurstTrigger by remember { mutableIntStateOf(0) }
+
+    val (blockedCount, spoofedCount) = remember(records) {
+        var b = 0
+        var s = 0
+        for (r in records) {
+            if (r.action == "BLOCKED") b++
+            else if (r.action == "SPOOFED") s++
+        }
+        b to s
+    }
 
     val filteredRecords = remember(records, selectedFilter) {
         when (selectedFilter) {
@@ -229,7 +240,7 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 // 1. Animated Statistics Cards
-                item(key = "stats_header") {
+                item(key = "stats_header", contentType = "stats_header") {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -251,7 +262,7 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
 
                 // 2. Deep Probe Analysis Panel (Optional toggle)
                 if (records.isNotEmpty()) {
-                    item(key = "deep_analysis_panel") {
+                    item(key = "deep_analysis_panel", contentType = "deep_analysis_panel") {
                         AnimatedVisibility(
                             visible = deepAnalysisEnabled,
                             enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
@@ -264,12 +275,12 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
 
                 // 3. Dual Leaderboard Podium ("读取次数积分榜" & "最爱读取积分榜")
                 if (topOffenders.isNotEmpty()) {
-                    item(key = "top_offenders_card") {
+                    item(key = "top_offenders_card", contentType = "top_offenders_card") {
                         TopOffendersCard(
                             topOffenders = topOffenders,
                             favoriteOffenders = favoriteOffenders,
                             favoriteBoardEnabled = favoriteBoardEnabled,
-                            hasUsagePermission = viewModel.hasUsageStatsPermission(),
+                            hasUsagePermission = hasUsagePermission,
                             hapticEnabled = hapticEnabled,
                             onCelebrateClick = {
                                 confettiBurstTrigger++
@@ -285,7 +296,7 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
                 }
 
                 // 4. Filter Chips
-                item(key = "filter_chips") {
+                item(key = "filter_chips", contentType = "filter_chips") {
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -312,7 +323,6 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
                                 )
                             },
                             label = {
-                                val blockedCount = records.count { it.action == "BLOCKED" }
                                 Text(tr("拦回去了 ($blockedCount)", "Blocked ($blockedCount)"))
                             }
                         )
@@ -330,7 +340,6 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
                                 )
                             },
                             label = {
-                                val spoofedCount = records.count { it.action == "SPOOFED" }
                                 Text(tr("塞了假词 ($spoofedCount)", "Spoofed ($spoofedCount)"))
                             }
                         )
@@ -339,7 +348,7 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
 
                 // 5. Timeline Records or Empty State
                 if (filteredRecords.isEmpty()) {
-                    item(key = "empty_placeholder") {
+                    item(key = "empty_placeholder", contentType = "empty_placeholder") {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -376,7 +385,8 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
                 } else {
                     items(
                         items = filteredRecords,
-                        key = { it.id }
+                        key = { it.id },
+                        contentType = { if (it.spoofedPayload.isNullOrBlank()) "audit_plain" else "audit_spoofed" }
                     ) { record ->
                         AuditRecordCard(
                             record = record,
@@ -386,8 +396,7 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
                                 autoConfettiInSheet = false
                                 selectedRecordForSheet = record
                                 selectedPackageForSheet = record.packageName
-                            },
-                            modifier = Modifier.animateItem()
+                            }
                         )
                     }
                 }
@@ -1121,7 +1130,10 @@ private fun triggerIconFor(trigger: TriggerType): ImageVector {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+private val AuditCardShape = RoundedCornerShape(14.dp)
+private val AuditBadgeShape = RoundedCornerShape(6.dp)
+private val AuditPayloadShape = RoundedCornerShape(8.dp)
+
 @Composable
 fun AuditRecordCard(
     record: AuditRecord,
@@ -1147,13 +1159,12 @@ fun AuditRecordCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .animateContentSize()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(AuditCardShape)
             .clickable { onClick() },
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
-        shape = RoundedCornerShape(14.dp)
+        shape = AuditCardShape
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -1196,13 +1207,13 @@ fun AuditRecordCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            FlowRow(
+            Row(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 // Action Pill
                 Surface(
-                    shape = RoundedCornerShape(6.dp),
+                    shape = AuditBadgeShape,
                     color = if (isBlocked) {
                         MaterialTheme.colorScheme.errorContainer
                     } else {
@@ -1243,7 +1254,7 @@ fun AuditRecordCard(
 
                 // Trigger Reason Badge with Icon
                 Surface(
-                    shape = RoundedCornerShape(6.dp),
+                    shape = AuditBadgeShape,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh
                 ) {
                     Row(
@@ -1260,7 +1271,8 @@ fun AuditRecordCard(
                         Text(
                             text = trigger.displayName(isEn),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
                         )
                     }
                 }
@@ -1274,7 +1286,7 @@ fun AuditRecordCard(
                         tr("主进程", "main")
                     }
                     Surface(
-                        shape = RoundedCornerShape(6.dp),
+                        shape = AuditBadgeShape,
                         color = if (isSub) {
                             MaterialTheme.colorScheme.secondaryContainer
                         } else {
@@ -1289,7 +1301,9 @@ fun AuditRecordCard(
                                 MaterialTheme.colorScheme.onSecondaryContainer
                             } else {
                                 MaterialTheme.colorScheme.outline
-                            }
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -1298,7 +1312,7 @@ fun AuditRecordCard(
             if (!record.spoofedPayload.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = AuditPayloadShape,
                     color = MaterialTheme.colorScheme.surfaceContainerHighest,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -1859,11 +1873,21 @@ private fun formatProcState(procState: String, isEn: Boolean): String {
         val ms = Regex("""\d+ms""").find(procState)?.value ?: ""
         return if (isEn) "Launch Resume Read ($ms)" else "切回前台瞬间摸兜 ($ms)"
     }
+    if (procState.contains("WINDOW_FOCUS", ignoreCase = true)) {
+        val ms = Regex("""\d+ms""").find(procState)?.value ?: ""
+        return if (isEn) "Window Focus Gain Read ($ms)" else "弹窗/键盘收起获焦摸兜 ($ms)"
+    }
+    if (procState.contains("TOP_UNSOLICITED_PROBE", ignoreCase = true)) {
+        return if (isEn) "Foreground Probe Without Paste Gesture" else "前台交互顺手偷摸（无粘贴动作）"
+    }
+    if (procState.contains("USER_PASTE_MENU", ignoreCase = true)) {
+        return if (isEn) "Context Menu / Long-Press Paste" else "长按弹窗粘贴"
+    }
     if (procState.contains("BACKGROUND_SUBPROCESS", ignoreCase = true)) {
         return if (isEn) "Background Subprocess Read" else "后台子进程偷读"
     }
     return when (procState.uppercase()) {
-        "TOP" -> if (isEn) "Foreground Active" else "前台交互中"
+        "TOP", "TOP_ACTIVE" -> if (isEn) "Foreground Active" else "前台交互中"
         "TOP_SLEEPING" -> if (isEn) "Screen Off / Standby" else "息屏待机状态"
         "FOREGROUND_SERVICE" -> if (isEn) "Foreground Service" else "前台常驻服务"
         "BOUND_TOP" -> if (isEn) "Bound to Foreground" else "依附前台进程"

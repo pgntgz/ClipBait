@@ -38,23 +38,72 @@ object ClipboardHook {
             }
         )
 
-        // 2. Hook View.dispatchTouchEvent to record user touch interaction window
+        // 2. Hook View.performLongClick and TextView.onTextContextMenuItem to record genuine paste gestures
         try {
             XposedHelpers.findAndHookMethod(
                 View::class.java,
-                "dispatchTouchEvent",
-                MotionEvent::class.java,
+                "performLongClick",
                 object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
-                        val event = param.args[0] as? MotionEvent ?: return
-                        if (event.action == MotionEvent.ACTION_DOWN || event.action == MotionEvent.ACTION_UP) {
-                            CallStackAnalyzer.recordUserTouch()
+                        CallStackAnalyzer.recordLongPress()
+                    }
+                }
+            )
+            XposedHelpers.findAndHookMethod(
+                android.widget.TextView::class.java,
+                "onTextContextMenuItem",
+                Int::class.javaPrimitiveType,
+                object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        val id = param.args.firstOrNull() as? Int ?: return
+                        if (id == android.R.id.paste || id == android.R.id.pasteAsPlainText) {
+                            CallStackAnalyzer.recordExplicitPasteAction()
+                        } else if (id == android.R.id.copy || id == android.R.id.cut) {
+                            CallStackAnalyzer.clearPasteSignalsOnCopy()
                         }
                     }
                 }
             )
         } catch (t: Throwable) {
-            // Some specialized views might fail, safely ignore
+            // Safely ignore if specialized view fails
+        }
+
+        // 2b. Hook setPrimaryClip / clearPrimaryClip / addPrimaryClipChangedListener on ClipboardManager
+        try {
+            XposedHelpers.findAndHookMethod(
+                ClipboardManager::class.java,
+                "setPrimaryClip",
+                ClipData::class.java,
+                object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        CallStackAnalyzer.clearPasteSignalsOnCopy()
+                    }
+                }
+            )
+            XposedHelpers.findAndHookMethod(
+                ClipboardManager::class.java,
+                "clearPrimaryClip",
+                object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        CallStackAnalyzer.clearPasteSignalsOnCopy()
+                    }
+                }
+            )
+            XposedHelpers.findAndHookMethod(
+                ClipboardManager::class.java,
+                "addPrimaryClipChangedListener",
+                ClipboardManager.OnPrimaryClipChangedListener::class.java,
+                object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        val context = appContext ?: return
+                        val rule = HookClient.getRuleForPackage(context, packageName)
+                        if (rule.action == "block" || rule.action == "spoof" || rule.action == "smart") {
+                            param.result = null
+                        }
+                    }
+                }
+            )
+        } catch (_: Throwable) {
         }
 
         // 3. Hook ClipboardManager.getPrimaryClip()

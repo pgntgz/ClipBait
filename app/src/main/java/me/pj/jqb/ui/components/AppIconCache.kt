@@ -3,10 +3,8 @@ package me.pj.jqb.ui.components
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
-import android.util.LruCache
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,7 +12,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,25 +45,40 @@ data class AppDetailMeta(
 
 object AppIconCache {
 
-    private val bitmapCache = object : LruCache<String, ImageBitmap>(200) {}
-    private val metaCache = ConcurrentHashMap<String, AppDetailMeta>()
+    private const val MAX_ICON_CACHE_SIZE = 650
+    private val bitmapCache = ConcurrentHashMap<String, ImageBitmap>(256)
+    private val labelCache = ConcurrentHashMap<String, String>(256)
+    private val metaCache = ConcurrentHashMap<String, AppDetailMeta>(128)
 
     fun getCachedIcon(packageName: String): ImageBitmap? {
-        return synchronized(bitmapCache) {
-            bitmapCache.get(packageName)
+        return bitmapCache[packageName]
+    }
+
+    fun cacheLabel(packageName: String, label: String) {
+        if (label.isNotBlank() && label != packageName) {
+            labelCache[packageName] = label
         }
     }
 
     suspend fun loadIconAsync(context: Context, packageName: String): ImageBitmap? {
-        getCachedIcon(packageName)?.let { return it }
-        return withContext(Dispatchers.Default) {
+        bitmapCache[packageName]?.let { return it }
+        return withContext(Dispatchers.IO) {
+            bitmapCache[packageName]?.let { return@withContext it }
             try {
                 val pm = context.packageManager
                 val drawable = pm.getApplicationIcon(packageName)
-                val bitmap = drawable.toBitmap(112, 112, Bitmap.Config.ARGB_8888).asImageBitmap()
-                synchronized(bitmapCache) {
-                    bitmapCache.put(packageName, bitmap)
+                val bitmap = drawable.toBitmap(96, 96, Bitmap.Config.ARGB_8888).asImageBitmap()
+                if (bitmapCache.size >= MAX_ICON_CACHE_SIZE) {
+                    // Evict a small batch if the user has hundreds of system apps
+                    val iterator = bitmapCache.keys.iterator()
+                    var removed = 0
+                    while (iterator.hasNext() && removed < 64) {
+                        iterator.next()
+                        iterator.remove()
+                        removed++
+                    }
                 }
+                bitmapCache[packageName] = bitmap
                 bitmap
             } catch (_: Exception) {
                 null
@@ -80,7 +92,9 @@ object AppIconCache {
             val pm = context.packageManager
             val appInfo = pm.getApplicationInfo(packageName, 0)
             val pkgInfo = pm.getPackageInfo(packageName, 0)
-            val label = pm.getApplicationLabel(appInfo).toString().ifBlank { packageName }
+            val label = labelCache[packageName]
+                ?: pm.getApplicationLabel(appInfo).toString().ifBlank { packageName }
+            cacheLabel(packageName, label)
             val meta = AppDetailMeta(
                 packageName = packageName,
                 appName = label,
@@ -95,7 +109,7 @@ object AppIconCache {
         } catch (_: Exception) {
             AppDetailMeta(
                 packageName = packageName,
-                appName = packageName,
+                appName = labelCache[packageName] ?: packageName,
                 versionName = "未安装/系统组件",
                 targetSdk = 0,
                 minSdk = 0,
@@ -106,10 +120,18 @@ object AppIconCache {
     }
 
     fun resolveLabel(context: Context, packageName: String, fallback: String): String {
-        if (fallback.isNotBlank() && fallback != packageName) return fallback
+        if (fallback.isNotBlank() && fallback != packageName) {
+            cacheLabel(packageName, fallback)
+            return fallback
+        }
+        labelCache[packageName]?.let { return it }
         return getAppMeta(context, packageName).appName
     }
 }
+
+private val DefaultIconShape10 = RoundedCornerShape(10.dp)
+private val DefaultIconShape8 = RoundedCornerShape(8.dp)
+private val DefaultIconShape12 = RoundedCornerShape(12.dp)
 
 @Composable
 fun AppIcon(
@@ -123,41 +145,42 @@ fun AppIcon(
         mutableStateOf(AppIconCache.getCachedIcon(packageName))
     }
 
-    LaunchedEffect(packageName) {
-        if (iconBitmap == null) {
+    if (iconBitmap == null) {
+        LaunchedEffect(packageName) {
             iconBitmap = AppIconCache.loadIconAsync(context, packageName)
         }
     }
 
-    Crossfade(
-        targetState = iconBitmap,
-        animationSpec = tween(durationMillis = 180),
-        label = "AppIconCrossfade",
-        modifier = modifier.size(size)
-    ) { bmp ->
-        if (bmp != null) {
-            Image(
-                bitmap = bmp,
+    val shape = when (cornerRadius) {
+        10.dp -> DefaultIconShape10
+        8.dp -> DefaultIconShape8
+        12.dp -> DefaultIconShape12
+        else -> remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+    }
+
+    val bmp = iconBitmap
+    if (bmp != null) {
+        Image(
+            bitmap = bmp,
+            contentDescription = null,
+            modifier = modifier
+                .size(size)
+                .clip(shape)
+        )
+    } else {
+        Box(
+            modifier = modifier
+                .size(size)
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Apps,
                 contentDescription = null,
-                modifier = Modifier
-                    .size(size)
-                    .clip(RoundedCornerShape(cornerRadius))
+                modifier = Modifier.size(size * 0.55f),
+                tint = MaterialTheme.colorScheme.outline
             )
-        } else {
-            Surface(
-                shape = RoundedCornerShape(cornerRadius),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.size(size)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Outlined.Apps,
-                        contentDescription = null,
-                        modifier = Modifier.size(size * 0.55f),
-                        tint = MaterialTheme.colorScheme.outline
-                    )
-                }
-            }
         }
     }
 }

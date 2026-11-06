@@ -221,7 +221,24 @@ class ConfigRepository(private val context: Context) {
         updateConfig { current ->
             current.copy(
                 settings = current.settings.copy(
-                    auditLog = current.settings.auditLog.copy(showInterceptToast = enabled)
+                    auditLog = current.settings.auditLog.copy(
+                        showInterceptToast = enabled,
+                        interceptAlertMode = if (enabled) "toast" else "off"
+                    )
+                )
+            )
+        }
+    }
+
+    suspend fun setInterceptAlertMode(mode: String) = withContext(Dispatchers.IO) {
+        val validMode = if (mode in setOf("off", "toast", "notification", "dialog")) mode else "off"
+        updateConfig { current ->
+            current.copy(
+                settings = current.settings.copy(
+                    auditLog = current.settings.auditLog.copy(
+                        interceptAlertMode = validMode,
+                        showInterceptToast = validMode == "toast"
+                    )
                 )
             )
         }

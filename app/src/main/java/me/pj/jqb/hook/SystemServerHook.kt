@@ -1,17 +1,26 @@
 package me.pj.jqb.hook
 
+import android.app.AlertDialog
+import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.Configuration
 import android.os.Binder
 import android.os.Build
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.UserHandle
 import android.util.AtomicFile
+import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
+import android.view.WindowManager
+import android.widget.Toast
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
@@ -24,8 +33,10 @@ import me.pj.jqb.model.ConfigModel
 import me.pj.jqb.model.PendingAuditItem
 import me.pj.jqb.model.TriggerType
 import java.io.File
+import java.lang.reflect.Proxy
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.abs
 
 object SystemServerHook {
 
@@ -43,8 +54,83 @@ object SystemServerHook {
     // Tracks when an application's activity was resumed to catch onResume sneak probes
     private val appResumeTimeMap = ConcurrentHashMap<String, Long>()
 
+    // Tracks when an application's window regained focus (e.g. closing dialog/keyboard/notification shade)
+    private val appWindowFocusTimeMap = ConcurrentHashMap<String, Long>()
+
     // Tracks last clipboard read time per package to identify burst/polling patterns
     private val appLastReadTimeMap = ConcurrentHashMap<String, Long>()
+
+    // Tracks when a read for a package was intercepted (blocked/spoofed) to suppress any AOSP toast leak
+    private val lastInterceptedReadTimeMap = ConcurrentHashMap<String, Long>()
+
+    // Positive Paste Signals in system_server:
+    // 1. Long-press haptic / gesture timestamps per UID and package
+    private val uidLongPressTimeMap = ConcurrentHashMap<Int, Long>()
+    private val pkgLongPressTimeMap = ConcurrentHashMap<String, Long>()
+
+    // 2. Active PopupWindow / FloatingToolbar / ContextMenu window tracking per package
+    private val activePopupWindowTokens = ConcurrentHashMap<IBinder, String>()
+    private val pkgPopupWindowTimeMap = ConcurrentHashMap<String, Long>()
+
+    // 3. Physical touch-hold tracking via PointerEventListener
+    @Volatile
+    private var touchDownTimestamp: Long = 0L
+    @Volatile
+    private var touchDownX: Float = 0f
+    @Volatile
+    private var touchDownY: Float = 0f
+    @Volatile
+    private var touchMovedBeyondSlop: Boolean = false
+    @Volatile
+    private var lastPhysicalLongPressTime: Long = 0L
+
+    // 4. Zero-Trust Copy / Paste Token Burn tracking:
+    // Tracks when setPrimaryClip / clearPrimaryClip happened so apps cannot piggyback on a "Copy" long-press
+    private val lastSetClipTimeMap = ConcurrentHashMap<String, Long>()
+    @Volatile
+    private var globalLastSetClipTime: Long = 0L
+
+    // Tracks when a verified paste read started so the paste token is burned after a short 280ms multi-read window
+    private val lastVerifiedPasteTimeMap = ConcurrentHashMap<String, Long>()
+
+    // Tracks system-level intercept alert cooldowns & active dialog reference
+    @Volatile
+    private var lastSystemToastTime: Long = 0L
+    private val lastSystemDialogTimeMap = ConcurrentHashMap<String, Long>()
+    @Volatile
+    private var activeSystemAlertDialog: AlertDialog? = null
+
+    private fun clearAllPasteSignals() {
+        uidLongPressTimeMap.clear()
+        pkgLongPressTimeMap.clear()
+        pkgPopupWindowTimeMap.clear()
+        activePopupWindowTokens.clear()
+        lastVerifiedPasteTimeMap.clear()
+        lastPhysicalLongPressTime = 0L
+        touchDownTimestamp = 0L
+    }
+
+    private fun isExplicitPasteToolbarTitle(title: String): Boolean {
+        if (title.isEmpty()) return false
+        return title.contains("FloatingToolbar", ignoreCase = true) ||
+            title.contains("PastePopupWindow", ignoreCase = true) ||
+            title.contains("SelectPopupWindow", ignoreCase = true) ||
+            title.contains("ContextMenu", ignoreCase = true) ||
+            title.contains("Paste", ignoreCase = true)
+    }
+
+    private fun hasRecentLongPressOrHandleSignal(pkg: String, uid: Int, now: Long): Boolean {
+        val lastUidLp = if (uid > 0) (uidLongPressTimeMap[uid] ?: 0L) else 0L
+        val lastPkgLp = pkgLongPressTimeMap[pkg] ?: 0L
+        val lastLp = maxOf(lastUidLp, lastPkgLp, lastPhysicalLongPressTime)
+        if (lastLp > 0L && (now - lastLp) in 0..2200L) {
+            return true
+        }
+        if (!touchMovedBeyondSlop && touchDownTimestamp > 0L && (now - touchDownTimestamp) >= 300L) {
+            return true
+        }
+        return false
+    }
 
     // Debounces audit log broadcasts so multi-read bursts within 600ms produce 1 clean entry
     private val lastReportTimeMap = ConcurrentHashMap<String, Long>()
@@ -153,7 +239,10 @@ object SystemServerHook {
         // 1. Hook Activity Lifecycle across Android 11-16 (ActivityTaskManagerService & ActivityClientController)
         hookActivityResumeTracking(classLoader)
 
-        // 2. Hook ClipboardService
+        // 2. Hook WindowManagerService & Haptics to track PopupWindows (Paste menu), Long-Presses, and Window Focus
+        hookWindowAndPasteSignals(classLoader)
+
+        // 3. Hook ClipboardService
         hookClipboardService(classLoader)
     }
 
@@ -170,10 +259,16 @@ object SystemServerHook {
                         0
                     }
                     if (!pkg.isNullOrEmpty()) {
+                        val prevTop = currentTopPackage
                         currentTopPackage = pkg
                         val now = System.currentTimeMillis()
                         appResumeTimeMap["$userId:$pkg"] = now
                         appResumeTimeMap[pkg] = now
+                        if (prevTop != pkg) {
+                            // Clear any stale long-press state when switching apps
+                            pkgLongPressTimeMap.remove(pkg)
+                            lastPhysicalLongPressTime = 0L
+                        }
                     }
                 } catch (_: Throwable) {
                 }
@@ -232,6 +327,253 @@ object SystemServerHook {
         }
     }
 
+    /**
+     * Tracks positive user paste signals inside system_server so Smart mode never mistakes normal
+     * screen interactions (tapping WeChat chat input box, typing, clicking Send, scrolling) for a paste:
+     * 1. PopupWindow / FloatingToolbar / ContextMenu windows added or clicked via WindowManagerService.
+     * 2. Long-press haptic feedback (HapticFeedbackConstants.LONG_PRESS / TEXT_HANDLE_MOVE).
+     * 3. Stationary touch-hold >= 300ms via PointerEventListener.
+     * 4. Window focus transitions (updateFocusedWindowLocked) to catch onWindowFocusChanged probes.
+     */
+    private fun hookWindowAndPasteSignals(classLoader: ClassLoader) {
+        val wmsClass = XposedHelpers.findClassIfExists(
+            "com.android.server.wm.WindowManagerService",
+            classLoader
+        )
+        if (wmsClass != null) {
+            for (method in wmsClass.declaredMethods) {
+                when (method.name) {
+                    "addWindow" -> {
+                        XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                            override fun beforeHookedMethod(param: MethodHookParam) {
+                                try {
+                                    val attrs = param.args.firstOrNull { it is WindowManager.LayoutParams }
+                                        as? WindowManager.LayoutParams ?: return
+                                    val pkg = attrs.packageName ?: return
+                                    val title = attrs.title?.toString() ?: ""
+                                    val now = System.currentTimeMillis()
+                                    val callingUid = Binder.getCallingUid()
+                                    val isExplicitToolbar = isExplicitPasteToolbarTitle(title)
+                                    val isGenericPopup = attrs.type in WindowManager.LayoutParams.FIRST_SUB_WINDOW..WindowManager.LayoutParams.LAST_SUB_WINDOW ||
+                                        title.contains("PopupWindow", ignoreCase = true)
+
+                                    // Zero-Trust Popup Check:
+                                    // Generic PopupWindows (like WeChat's '+' menu or Taobao promotional popups)
+                                    // are ONLY treated as paste menus if preceded by a long-press or text-handle move!
+                                    if (isExplicitToolbar || (isGenericPopup && hasRecentLongPressOrHandleSignal(pkg, callingUid, now))) {
+                                        pkgPopupWindowTimeMap[pkg] = now
+                                        val clientBinder = (param.args.getOrNull(1) as? android.os.IInterface)?.asBinder()
+                                            ?: (param.args.getOrNull(1) as? IBinder)
+                                        if (clientBinder != null) {
+                                            activePopupWindowTokens[clientBinder] = pkg
+                                        }
+                                    }
+                                } catch (_: Throwable) {
+                                }
+                            }
+                        })
+                    }
+                    "relayoutWindow" -> {
+                        XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                            override fun beforeHookedMethod(param: MethodHookParam) {
+                                try {
+                                    val now = System.currentTimeMillis()
+                                    val clientBinder = (param.args.getOrNull(1) as? android.os.IInterface)?.asBinder()
+                                        ?: (param.args.getOrNull(1) as? IBinder)
+                                    if (clientBinder != null) {
+                                        val popupPkg = activePopupWindowTokens[clientBinder]
+                                        if (popupPkg != null) {
+                                            pkgPopupWindowTimeMap[popupPkg] = now
+                                        }
+                                    }
+                                    val attrs = param.args.firstOrNull { it is WindowManager.LayoutParams }
+                                        as? WindowManager.LayoutParams
+                                    if (attrs != null) {
+                                        val pkg = attrs.packageName
+                                        val title = attrs.title?.toString() ?: ""
+                                        if (!pkg.isNullOrEmpty() && isExplicitPasteToolbarTitle(title)) {
+                                            pkgPopupWindowTimeMap[pkg] = now
+                                        }
+                                    }
+                                } catch (_: Throwable) {
+                                }
+                            }
+                        })
+                    }
+                    "removeWindow", "removeClientToken" -> {
+                        XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                            override fun beforeHookedMethod(param: MethodHookParam) {
+                                try {
+                                    for (arg in param.args) {
+                                        val binder = (arg as? android.os.IInterface)?.asBinder()
+                                            ?: (arg as? IBinder)
+                                        if (binder != null) {
+                                            val pkg = activePopupWindowTokens.remove(binder)
+                                            if (pkg != null) {
+                                                // Refresh timestamp on verified paste popup dismissal so the "Paste" button's
+                                                // onClick handler (which runs right as the popup closes) is recognized.
+                                                pkgPopupWindowTimeMap[pkg] = System.currentTimeMillis()
+                                            }
+                                        }
+                                    }
+                                } catch (_: Throwable) {
+                                }
+                            }
+                        })
+                    }
+                    "updateFocusedWindowLocked" -> {
+                        XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                            override fun afterHookedMethod(param: MethodHookParam) {
+                                try {
+                                    val wms = param.thisObject ?: return
+                                    registerPointerLongPressMonitor(wms, classLoader)
+                                    val focusedWindow = XposedHelpers.getObjectField(wms, "mCurrentFocus") ?: return
+                                    val pkg = (XposedHelpers.callMethod(focusedWindow, "getOwningPackage") as? String) ?: return
+                                    val attrs = XposedHelpers.getObjectField(focusedWindow, "mAttrs") as? WindowManager.LayoutParams
+                                    val title = attrs?.title?.toString() ?: ""
+                                    val isSubWindow = attrs != null &&
+                                        attrs.type in WindowManager.LayoutParams.FIRST_SUB_WINDOW..WindowManager.LayoutParams.LAST_SUB_WINDOW
+                                    val now = System.currentTimeMillis()
+                                    if (isExplicitPasteToolbarTitle(title)) {
+                                        pkgPopupWindowTimeMap[pkg] = now
+                                    } else if (!isSubWindow && !shouldBypassPackage(pkg)) {
+                                        val lastFocus = appWindowFocusTimeMap[pkg] ?: 0L
+                                        if (now - lastFocus > 800L) {
+                                            appWindowFocusTimeMap[pkg] = now
+                                        }
+                                    }
+                                } catch (_: Throwable) {
+                                }
+                            }
+                        })
+                    }
+                    "systemReady" -> {
+                        XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                            override fun afterHookedMethod(param: MethodHookParam) {
+                                registerPointerLongPressMonitor(param.thisObject, classLoader)
+                            }
+                        })
+                    }
+                }
+            }
+        }
+
+        // Hook performHapticFeedback / performHapticFeedbackAsync across Session, WMS, and PhoneWindowManager
+        val hapticTargets = listOf(
+            "com.android.server.wm.Session",
+            "com.android.server.wm.WindowManagerService",
+            "com.android.server.policy.PhoneWindowManager"
+        )
+        for (className in hapticTargets) {
+            try {
+                val cls = XposedHelpers.findClassIfExists(className, classLoader) ?: continue
+                for (method in cls.declaredMethods) {
+                    if (method.name == "performHapticFeedback" || method.name == "performHapticFeedbackAsync") {
+                        XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                            override fun beforeHookedMethod(param: MethodHookParam) {
+                                try {
+                                    val effectId = param.args.firstOrNull { it is Int } as? Int ?: return
+                                    // LONG_PRESS = 0, TEXT_HANDLE_MOVE = 9
+                                    if (effectId == HapticFeedbackConstants.LONG_PRESS ||
+                                        effectId == HapticFeedbackConstants.TEXT_HANDLE_MOVE ||
+                                        effectId == 9
+                                    ) {
+                                        val now = System.currentTimeMillis()
+                                        val uid = Binder.getCallingUid()
+                                        if (uid > 0) {
+                                            uidLongPressTimeMap[uid] = now
+                                        }
+                                        val pkg = param.args.firstOrNull { it is String } as? String
+                                            ?: currentTopPackage
+                                        if (pkg.isNotEmpty()) {
+                                            pkgLongPressTimeMap[pkg] = now
+                                        }
+                                        lastPhysicalLongPressTime = now
+                                    }
+                                } catch (_: Throwable) {
+                                }
+                            }
+                        })
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    @Volatile
+    private var pointerMonitorRegistered = false
+
+    private fun registerPointerLongPressMonitor(wms: Any?, classLoader: ClassLoader) {
+        if (wms == null || pointerMonitorRegistered) return
+        pointerMonitorRegistered = true
+        try {
+            val listenerInterface = XposedHelpers.findClassIfExists(
+                "android.view.WindowManagerPolicyConstants\$PointerEventListener",
+                classLoader
+            ) ?: return
+            val proxy = Proxy.newProxyInstance(
+                classLoader,
+                arrayOf(listenerInterface)
+            ) { _, method, args ->
+                if (method.name == "onPointerEvent" && args != null && args.isNotEmpty()) {
+                    val event = args[0] as? MotionEvent
+                    if (event != null) {
+                        val now = System.currentTimeMillis()
+                        when (event.actionMasked) {
+                            MotionEvent.ACTION_DOWN -> {
+                                touchDownTimestamp = now
+                                touchDownX = event.rawX
+                                touchDownY = event.rawY
+                                touchMovedBeyondSlop = false
+                            }
+                            MotionEvent.ACTION_MOVE -> {
+                                if (!touchMovedBeyondSlop) {
+                                    if (abs(event.rawX - touchDownX) > 42f || abs(event.rawY - touchDownY) > 42f) {
+                                        touchMovedBeyondSlop = true
+                                    } else if (touchDownTimestamp > 0L && (now - touchDownTimestamp) >= 300L) {
+                                        lastPhysicalLongPressTime = now
+                                        if (currentTopPackage.isNotEmpty()) {
+                                            pkgLongPressTimeMap[currentTopPackage] = now
+                                        }
+                                    }
+                                }
+                            }
+                            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                                if (!touchMovedBeyondSlop && touchDownTimestamp > 0L && (now - touchDownTimestamp) >= 300L) {
+                                    lastPhysicalLongPressTime = now
+                                    if (currentTopPackage.isNotEmpty()) {
+                                        pkgLongPressTimeMap[currentTopPackage] = now
+                                    }
+                                }
+                                touchDownTimestamp = 0L
+                                touchMovedBeyondSlop = false
+                            }
+                        }
+                    }
+                }
+                null
+            }
+            // Try registerPointerEventListener(listener, displayId = 0) or registerPointerEventListener(listener)
+            val registered = try {
+                XposedHelpers.callMethod(wms, "registerPointerEventListener", proxy, 0)
+                true
+            } catch (_: Throwable) {
+                try {
+                    XposedHelpers.callMethod(wms, "registerPointerEventListener", proxy)
+                    true
+                } catch (_: Throwable) {
+                    false
+                }
+            }
+            if (registered) {
+                XposedBridge.log("$TAG Registered PointerEventListener for long-press paste detection.")
+            }
+        } catch (t: Throwable) {
+            XposedBridge.log("$TAG PointerEventListener registration note: ${t.message}")
+        }
+    }
+
     private fun hookClipboardService(classLoader: ClassLoader) {
         val clipboardServiceClass = XposedHelpers.findClassIfExists(
             "com.android.server.clipboard.ClipboardService",
@@ -256,32 +598,85 @@ object SystemServerHook {
             }
         )
 
-        val classesToHook = mutableListOf<Class<*>>(clipboardServiceClass)
-        try {
-            val implClass = XposedHelpers.findClass(
-                "com.android.server.clipboard.ClipboardService\$ClipboardImpl",
-                classLoader
-            )
-            classesToHook.add(implClass)
-        } catch (_: Throwable) {
+        // Defense-in-depth: suppress AOSP's "App pasted from your clipboard" toast if we just blocked/spoofed that package
+        for (method in clipboardServiceClass.declaredMethods) {
+            if (method.name == "showAccessNotificationLocked" || method.name == "notifyTextClassifierLocked") {
+                XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        val pkg = param.args.firstOrNull { it is String } as? String ?: return
+                        if (shouldBypassPackage(pkg)) return
+                        val action = getEffectiveAction(pkg)
+                        val lastIntercept = lastInterceptedReadTimeMap[pkg] ?: 0L
+                        if (action == "block" || action == "spoof" || (System.currentTimeMillis() - lastIntercept) in 0..1500L) {
+                            param.result = null
+                        }
+                    }
+                })
+            }
         }
 
-        for (targetClass in classesToHook) {
-            hookClipboardMethodsOnClass(targetClass)
+        val implClass = XposedHelpers.findClassIfExists(
+            "com.android.server.clipboard.ClipboardService\$ClipboardImpl",
+            classLoader
+        )
+        if (implClass != null) {
+            hookClipboardMethodsOnClass(implClass)
+        } else {
+            hookClipboardMethodsOnClass(clipboardServiceClass)
+        }
+    }
+
+    private fun extractCallingPackage(param: XC_MethodHook.MethodHookParam, callingUid: Int): String? {
+        for (arg in param.args) {
+            if (arg is String && arg.contains(".") && !arg.startsWith("android.intent")) {
+                return arg
+            }
+        }
+        val firstStr = param.args.firstOrNull { it is String } as? String
+        if (!firstStr.isNullOrBlank()) return firstStr
+        val ctx = systemContext ?: return null
+        if (callingUid <= 0) return null
+        val token = Binder.clearCallingIdentity()
+        return try {
+            ctx.packageManager.getPackagesForUid(callingUid)?.firstOrNull()
+        } catch (_: Throwable) {
+            null
+        } finally {
+            Binder.restoreCallingIdentity(token)
         }
     }
 
     private fun hookClipboardMethodsOnClass(targetClass: Class<*>) {
         for (method in targetClass.declaredMethods) {
             when (method.name) {
+                "setPrimaryClip", "setPrimaryClipAsPackage", "clearPrimaryClip" -> {
+                    XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                        override fun beforeHookedMethod(param: MethodHookParam) {
+                            // Zero-Trust Anti-Copy-Piggyback:
+                            // The instant the user copies text (setPrimaryClip) or clears the clipboard,
+                            // any preceding long-press or popup window was for COPYING, not pasting!
+                            // Immediately wipe all paste tokens and record lastSetClipTime so internal SDKs
+                            // or OnPrimaryClipChangedListeners reading back the clipboard within 850ms are caught!
+                            val now = System.currentTimeMillis()
+                            clearAllPasteSignals()
+                            globalLastSetClipTime = now
+                            val callingUid = Binder.getCallingUid()
+                            val pkg = extractCallingPackage(param, callingUid)
+                            if (!pkg.isNullOrEmpty()) {
+                                lastSetClipTimeMap[pkg] = now
+                            }
+                        }
+                    })
+                }
+
                 "getPrimaryClip" -> {
                     XposedBridge.hookMethod(method, object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
-                            val pkg = param.args.firstOrNull() as? String ?: return
-                            if (shouldBypassPackage(pkg)) return
-
                             val callingPid = Binder.getCallingPid()
                             val callingUid = Binder.getCallingUid()
+                            val pkg = extractCallingPackage(param, callingUid) ?: return
+                            if (shouldBypassPackage(pkg)) return
+
                             val action = getEffectiveAction(pkg)
                             if (action == "direct") return
 
@@ -289,6 +684,7 @@ object SystemServerHook {
 
                             when (action) {
                                 "block" -> {
+                                    lastInterceptedReadTimeMap[pkg] = System.currentTimeMillis()
                                     param.result = null
                                     reportIntercept(
                                         pkg = pkg,
@@ -302,6 +698,7 @@ object SystemServerHook {
                                     )
                                 }
                                 "spoof" -> {
+                                    lastInterceptedReadTimeMap[pkg] = System.currentTimeMillis()
                                     val decoy = getOrCreateConsistentDecoy(pkg)
                                     param.result = decoy
                                     val text = decoy?.getItemAt(0)?.text?.toString()
@@ -319,6 +716,7 @@ object SystemServerHook {
                                 "smart" -> {
                                     val isSneakProbe = isAppInSneakWindow(pkg, probeContext)
                                     if (isSneakProbe) {
+                                        lastInterceptedReadTimeMap[pkg] = System.currentTimeMillis()
                                         val fallback = getSmartFallbackForPackage(pkg)
                                         if (fallback == "spoof") {
                                             val decoy = getOrCreateConsistentDecoy(pkg)
@@ -347,6 +745,14 @@ object SystemServerHook {
                                                 procState = probeContext.procState
                                             )
                                         }
+                                    } else {
+                                        // Verified paste read allowed: record timestamp so the paste token
+                                        // is consumed/burned after a short 300ms multi-item paste burst window.
+                                        val now = System.currentTimeMillis()
+                                        val prevPaste = lastVerifiedPasteTimeMap[pkg] ?: 0L
+                                        if (now - prevPaste > 300L) {
+                                            lastVerifiedPasteTimeMap[pkg] = now
+                                        }
                                     }
                                 }
                             }
@@ -354,10 +760,11 @@ object SystemServerHook {
                     })
                 }
 
-                "hasPrimaryClip" -> {
+                "hasPrimaryClip", "hasClipboardText" -> {
                     XposedBridge.hookMethod(method, object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
-                            val pkg = param.args.firstOrNull() as? String ?: return
+                            val callingUid = Binder.getCallingUid()
+                            val pkg = extractCallingPackage(param, callingUid) ?: return
                             if (shouldBypassPackage(pkg)) return
 
                             val action = getEffectiveAction(pkg)
@@ -366,7 +773,7 @@ object SystemServerHook {
                             } else if (action == "spoof") {
                                 param.result = true
                             } else if (action == "smart") {
-                                val probeContext = analyzeProbeContext(pkg, Binder.getCallingPid(), Binder.getCallingUid(), isReadAction = false)
+                                val probeContext = analyzeProbeContext(pkg, Binder.getCallingPid(), callingUid, isReadAction = false)
                                 if (isAppInSneakWindow(pkg, probeContext)) {
                                     param.result = getSmartFallbackForPackage(pkg) != "block"
                                 }
@@ -378,7 +785,8 @@ object SystemServerHook {
                 "getPrimaryClipDescription" -> {
                     XposedBridge.hookMethod(method, object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
-                            val pkg = param.args.firstOrNull() as? String ?: return
+                            val callingUid = Binder.getCallingUid()
+                            val pkg = extractCallingPackage(param, callingUid) ?: return
                             if (shouldBypassPackage(pkg)) return
 
                             val action = getEffectiveAction(pkg)
@@ -387,7 +795,7 @@ object SystemServerHook {
                             } else if (action == "spoof") {
                                 param.result = DecoyGenerator.generateClipDescription()
                             } else if (action == "smart") {
-                                val probeContext = analyzeProbeContext(pkg, Binder.getCallingPid(), Binder.getCallingUid(), isReadAction = false)
+                                val probeContext = analyzeProbeContext(pkg, Binder.getCallingPid(), callingUid, isReadAction = false)
                                 if (isAppInSneakWindow(pkg, probeContext)) {
                                     if (getSmartFallbackForPackage(pkg) == "block") {
                                         param.result = null
@@ -399,17 +807,39 @@ object SystemServerHook {
                         }
                     })
                 }
-                "addPrimaryClipChangedListener" -> {
+
+                "getPrimaryClipSource" -> {
                     XposedBridge.hookMethod(method, object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
-                            val pkg = (param.args.getOrNull(1) as? String)
-                                ?: (param.args.firstOrNull() as? String)
-                                ?: return
+                            val callingUid = Binder.getCallingUid()
+                            val pkg = extractCallingPackage(param, callingUid) ?: return
                             if (shouldBypassPackage(pkg)) return
 
                             val action = getEffectiveAction(pkg)
-                            if (action == "block") {
-                                // Block rogue app from registering background clipboard change listeners
+                            if (action == "block" || action == "spoof") {
+                                param.result = null
+                            } else if (action == "smart") {
+                                val probeContext = analyzeProbeContext(pkg, Binder.getCallingPid(), callingUid, isReadAction = false)
+                                if (isAppInSneakWindow(pkg, probeContext)) {
+                                    param.result = null
+                                }
+                            }
+                        }
+                    })
+                }
+
+                "addPrimaryClipChangedListener" -> {
+                    XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                        override fun beforeHookedMethod(param: MethodHookParam) {
+                            val callingUid = Binder.getCallingUid()
+                            val pkg = extractCallingPackage(param, callingUid) ?: return
+                            if (shouldBypassPackage(pkg)) return
+
+                            val action = getEffectiveAction(pkg)
+                            if (action == "block" || action == "spoof" || action == "smart") {
+                                // Zero-Trust Listener Blinding:
+                                // Prevent apps in Block, Spoof, or Smart mode from passively listening to
+                                // real-time clipboard change events when the user copies text in any app!
                                 param.result = null
                             }
                         }
@@ -425,6 +855,64 @@ object SystemServerHook {
         val procState: String
     )
 
+    private fun isDeviceInteractiveAndUnlocked(): Boolean {
+        val ctx = systemContext ?: return true
+        val token = Binder.clearCallingIdentity()
+        return try {
+            val pm = ctx.getSystemService(PowerManager::class.java)
+            if (pm != null && !pm.isInteractive) return false
+            val km = ctx.getSystemService(KeyguardManager::class.java)
+            if (km != null && km.isKeyguardLocked) return false
+            true
+        } catch (_: Throwable) {
+            true
+        } finally {
+            Binder.restoreCallingIdentity(token)
+        }
+    }
+
+    /**
+     * Checks whether the calling foreground app has a genuine user paste signal:
+     * 1. Device screen must be interactive and unlocked.
+     * 2. Must NOT be within 850ms after a setPrimaryClip ("Copy") call (defeats post-copy self-reads).
+     * 3. If a verified paste read already occurred > 320ms ago without a newer gesture, the old token is burned.
+     * 4. Requires an active verified paste PopupWindow / FloatingToolbar, a just-dismissed paste popup (<= 1800ms),
+     *    or a Long-Press / Text-Handle gesture within the last 4000ms.
+     */
+    private fun hasVerifiedUserPasteSignal(pkg: String, callingUid: Int, now: Long): Boolean {
+        if (!isDeviceInteractiveAndUnlocked()) return false
+
+        // Defeat post-copy self-read / SDK piggyback right after setPrimaryClip
+        val lastPkgSet = lastSetClipTimeMap[pkg] ?: 0L
+        if ((now - globalLastSetClipTime) in 0..850L || (now - lastPkgSet) in 0..1200L) {
+            return false
+        }
+
+        val lastPasteRead = lastVerifiedPasteTimeMap[pkg] ?: 0L
+        val withinSamePasteBurst = lastPasteRead > 0L && (now - lastPasteRead) in 0..320L
+        if (withinSamePasteBurst) {
+            return true
+        }
+
+        if (activePopupWindowTokens.containsValue(pkg)) {
+            return true
+        }
+        val lastPopup = pkgPopupWindowTimeMap[pkg] ?: 0L
+        if (lastPopup > lastPasteRead && (now - lastPopup) in 0..1800L) {
+            return true
+        }
+        val lastUidLp = if (callingUid > 0) (uidLongPressTimeMap[callingUid] ?: 0L) else 0L
+        val lastPkgLp = pkgLongPressTimeMap[pkg] ?: 0L
+        val lastLp = maxOf(lastUidLp, lastPkgLp, lastPhysicalLongPressTime)
+        if (lastLp > lastPasteRead && (now - lastLp) in 0..4000L) {
+            return true
+        }
+        if (!touchMovedBeyondSlop && touchDownTimestamp > lastPasteRead && (now - touchDownTimestamp) >= 300L) {
+            return true
+        }
+        return false
+    }
+
     private fun analyzeProbeContext(
         pkg: String,
         callingPid: Int,
@@ -436,12 +924,14 @@ object SystemServerHook {
         val userPkgKey = "$userId:$pkg"
 
         val lastResume = appResumeTimeMap[userPkgKey] ?: appResumeTimeMap[pkg] ?: 0L
+        val lastFocus = appWindowFocusTimeMap[pkg] ?: 0L
         val lastRead = if (isReadAction) {
             appLastReadTimeMap.put(userPkgKey, now) ?: appLastReadTimeMap.put(pkg, now) ?: 0L
         } else {
             appLastReadTimeMap[userPkgKey] ?: appLastReadTimeMap[pkg] ?: 0L
         }
         val elapsedSinceResume = now - lastResume
+        val elapsedSinceFocus = now - lastFocus
         val elapsedSinceLastRead = now - lastRead
 
         val procName = resolveProcessName(callingPid, pkg)
@@ -450,21 +940,34 @@ object SystemServerHook {
         // Check if the calling process is physically in the foreground (supports fullscreen, split-screen, and floating windows!)
         val isForegroundApp = isProcessForeground(callingUid, pkg)
 
+        // Check if the user actually performed a paste gesture (long-press / popup paste menu)
+        val isVerifiedPaste = isForegroundApp && !isSubProcess && hasVerifiedUserPasteSignal(pkg, callingUid, now)
+
         return when {
             isSubProcess -> ProbeContextInfo(
                 triggerType = TriggerType.BACKGROUND_SILENT,
                 processName = procName,
                 procState = "BACKGROUND_SUBPROCESS"
             )
+            !isForegroundApp -> ProbeContextInfo(
+                triggerType = TriggerType.BACKGROUND_SILENT,
+                processName = procName,
+                procState = "CACHED_OR_BACKGROUND"
+            )
+            isVerifiedPaste -> ProbeContextInfo(
+                triggerType = TriggerType.CONTEXT_MENU_PASTE,
+                processName = procName,
+                procState = "USER_PASTE_MENU"
+            )
             elapsedSinceResume in 0..currentConfig.settings.smartDetect.resumeWindowMs -> ProbeContextInfo(
                 triggerType = TriggerType.LIFECYCLE_RESUME,
                 processName = procName,
                 procState = "TOP_ON_RESUME (${elapsedSinceResume}ms)"
             )
-            !isForegroundApp -> ProbeContextInfo(
-                triggerType = TriggerType.BACKGROUND_SILENT,
+            elapsedSinceFocus in 0..1500L -> ProbeContextInfo(
+                triggerType = TriggerType.WINDOW_FOCUS,
                 processName = procName,
-                procState = "CACHED_OR_BACKGROUND"
+                procState = "WINDOW_FOCUS (${elapsedSinceFocus}ms)"
             )
             lastRead > 0 && elapsedSinceLastRead in 1..1000L -> ProbeContextInfo(
                 triggerType = TriggerType.ASYNC_POLL,
@@ -474,12 +977,13 @@ object SystemServerHook {
             else -> ProbeContextInfo(
                 triggerType = TriggerType.FOREGROUND_POLL,
                 processName = procName,
-                procState = "TOP_ACTIVE"
+                procState = "TOP_UNSOLICITED_PROBE"
             )
         }
     }
 
     private fun isProcessForeground(callingUid: Int, pkg: String): Boolean {
+        if (!isDeviceInteractiveAndUnlocked()) return false
         if (currentTopPackage == pkg) return true
         val ctx = systemContext ?: return currentTopPackage.isEmpty()
         if (callingUid <= 0) return currentTopPackage.isEmpty()
@@ -612,9 +1116,156 @@ object SystemServerHook {
     }
 
     private fun isAppInSneakWindow(pkg: String, probeContext: ProbeContextInfo): Boolean {
-        return probeContext.triggerType == TriggerType.LIFECYCLE_RESUME ||
-                probeContext.triggerType == TriggerType.BACKGROUND_SILENT ||
-                probeContext.triggerType == TriggerType.ASYNC_POLL
+        // Default-deny in Smart mode unless positively verified as a user paste gesture!
+        return !probeContext.triggerType.isUserInitiated
+    }
+
+    private fun isEnglishConfig(): Boolean {
+        val lang = currentConfig.settings.language
+        if (lang == "en") return true
+        if (lang == "zh") return false
+        return java.util.Locale.getDefault().language.startsWith("en", ignoreCase = true)
+    }
+
+    private fun triggerLabel(triggerCode: String, isEn: Boolean): String {
+        val type = TriggerType.fromCode(triggerCode)
+        return if (isEn) type.displayNameEn else type.displayName
+    }
+
+    private fun showSystemInterceptAlert(
+        ctx: Context,
+        mode: String,
+        pkg: String,
+        appName: String,
+        action: String,
+        triggerCode: String,
+        payload: String?,
+        forceTest: Boolean = false
+    ): Boolean {
+        if (mode != "toast" && mode != "dialog") return false
+        val now = System.currentTimeMillis()
+        val isEn = isEnglishConfig()
+
+        if (mode == "toast") {
+            if (!forceTest && (now - lastSystemToastTime) in 0..2500L) return true
+            lastSystemToastTime = now
+            val msg = if (isEn) {
+                val verbEn = if (action == "BLOCKED") "blocked" else "fed decoy"
+                "ClipBait caught $appName reading clipboard ($verbEn)"
+            } else {
+                val verbZh = if (action == "BLOCKED") "已拦回空值" else "已塞假词糊弄"
+                "ClipBait 抓现行：「$appName」刚偷摸剪贴板（$verbZh）"
+            }
+            Handler(Looper.getMainLooper()).post {
+                try {
+                    Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+                } catch (_: Throwable) {
+                }
+            }
+            return true
+        }
+
+        // mode == "dialog": Native AOSP System-Style Alert Dialog directly from system_server
+        val lastPkgDialog = lastSystemDialogTimeMap[pkg] ?: 0L
+        if (!forceTest && (now - lastPkgDialog) in 0..6000L) return true
+        lastSystemDialogTimeMap[pkg] = now
+
+        val triggerText = triggerLabel(triggerCode, isEn)
+        val title = if (isEn) {
+            "🛡️ ClipBait Intercept Alert"
+        } else {
+            "🛡️ ClipBait 抓现行系统提示"
+        }
+        val body = if (isEn) {
+            buildString {
+                append("App: $appName ($pkg)\n")
+                append("Behavior: $triggerText\n")
+                if (action == "BLOCKED") {
+                    append("Action: Blocked (returned empty clipboard)")
+                } else {
+                    append("Action: Spoofed with decoy phrase")
+                    if (!payload.isNullOrBlank()) {
+                        val preview = if (payload.length > 60) payload.take(60) + "…" else payload
+                        append("\nDecoy: \"$preview\"")
+                    }
+                }
+            }
+        } else {
+            buildString {
+                append("伸手应用：$appName ($pkg)\n")
+                append("触发时机：$triggerText\n")
+                if (action == "BLOCKED") {
+                    append("处置结果：已当场阻断并返回空剪贴板")
+                } else {
+                    append("处置结果：已塞入伪装假词糊弄")
+                    if (!payload.isNullOrBlank()) {
+                        val preview = if (payload.length > 60) payload.take(60) + "…" else payload
+                        append("\n投喂内容：「$preview」")
+                    }
+                }
+            }
+        }
+        val btnText = if (isEn) "Got it" else "知道了"
+
+        val mainHandler = Handler(Looper.getMainLooper())
+        mainHandler.post {
+            try {
+                activeSystemAlertDialog?.let { prev ->
+                    if (prev.isShowing) prev.dismiss()
+                }
+            } catch (_: Throwable) {
+            }
+            try {
+                val nightMode = (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                    Configuration.UI_MODE_NIGHT_YES
+                val themeRes = if (nightMode) {
+                    android.R.style.Theme_DeviceDefault_Dialog_Alert
+                } else {
+                    android.R.style.Theme_DeviceDefault_Light_Dialog_Alert
+                }
+                val dialog = AlertDialog.Builder(ctx, themeRes)
+                    .setTitle(title)
+                    .setMessage(body)
+                    .setCancelable(true)
+                    .setPositiveButton(btnText) { d, _ -> d.dismiss() }
+                    .create()
+
+                dialog.window?.apply {
+                    setType(
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+                        } else {
+                            @Suppress("DEPRECATION")
+                            WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+                        }
+                    )
+                    addFlags(
+                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+                    )
+                }
+                dialog.setCanceledOnTouchOutside(true)
+                dialog.show()
+                activeSystemAlertDialog = dialog
+
+                // Auto-dismiss after 4.5 seconds so it never blocks the screen if the user ignores it
+                mainHandler.postDelayed({
+                    try {
+                        if (dialog.isShowing) {
+                            dialog.dismiss()
+                        }
+                    } catch (_: Throwable) {
+                    }
+                }, 4500L)
+            } catch (t: Throwable) {
+                XposedBridge.log("$TAG System AlertDialog fallback to Toast: ${t.message}")
+                try {
+                    Toast.makeText(ctx, "$title\n$body", Toast.LENGTH_LONG).show()
+                } catch (_: Throwable) {
+                }
+            }
+        }
+        return true
     }
 
     private fun reportIntercept(
@@ -627,7 +1278,8 @@ object SystemServerHook {
         processName: String,
         procState: String
     ) {
-        if (!currentConfig.settings.auditLog.enabled) return
+        val alertMode = currentConfig.settings.auditLog.effectiveAlertMode()
+        if (!currentConfig.settings.auditLog.enabled && alertMode == "off") return
         val ctx = systemContext ?: return
         val now = System.currentTimeMillis()
         val lastReport = lastReportTimeMap[pkg] ?: 0L
@@ -637,10 +1289,22 @@ object SystemServerHook {
         }
         lastReportTimeMap[pkg] = now
 
-        // Run as system: the label lookup and the cross-user broadcast both need it.
+        // Run as system: the label lookup, system alert dialog/toast, and cross-user broadcast all need it.
         val identity = Binder.clearCallingIdentity()
         try {
             val appName = resolveAppName(pkg)
+            val systemAlertShown = showSystemInterceptAlert(
+                ctx = ctx,
+                mode = alertMode,
+                pkg = pkg,
+                appName = appName,
+                action = action,
+                triggerCode = triggerCode,
+                payload = payload
+            )
+
+            if (!currentConfig.settings.auditLog.enabled) return
+
             val recordId = UUID.randomUUID().toString()
             val pendingItem = PendingAuditItem(
                 recordId = recordId,
@@ -671,6 +1335,7 @@ object SystemServerHook {
                 putExtra("process_name", processName)
                 putExtra("proc_state", procState)
                 putExtra("timestamp", now)
+                putExtra("system_alert_shown", systemAlertShown)
             }
             safeSendBroadcast(ctx, intent)
         } catch (e: Exception) {
@@ -709,6 +1374,7 @@ object SystemServerHook {
             addAction(AuditLogReceiver.ACTION_CONFIG_UPDATED)
             addAction(AuditLogReceiver.ACTION_PULL_PENDING_LOGS)
             addAction(AuditLogReceiver.ACTION_LOG_ACK)
+            addAction(AuditLogReceiver.ACTION_TEST_SYSTEM_ALERT)
         }
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context?, intent: Intent?) {
@@ -732,6 +1398,24 @@ object SystemServerHook {
                         if (!ackId.isNullOrBlank()) {
                             removePendingAudit(ackId)
                         }
+                    }
+                    AuditLogReceiver.ACTION_TEST_SYSTEM_ALERT -> {
+                        val mode = intent.getStringExtra("alert_mode") ?: currentConfig.settings.auditLog.effectiveAlertMode()
+                        val pkg = intent.getStringExtra("package_name") ?: "com.tencent.mm"
+                        val appName = intent.getStringExtra("app_name") ?: "微信"
+                        val action = intent.getStringExtra("action") ?: "SPOOFED"
+                        val triggerCode = intent.getStringExtra("trigger_reason") ?: TriggerType.FOREGROUND_POLL.code
+                        val payload = intent.getStringExtra("spoofed_payload")
+                        showSystemInterceptAlert(
+                            ctx = context,
+                            mode = mode,
+                            pkg = pkg,
+                            appName = appName,
+                            action = action,
+                            triggerCode = triggerCode,
+                            payload = payload,
+                            forceTest = true
+                        )
                     }
                 }
             }

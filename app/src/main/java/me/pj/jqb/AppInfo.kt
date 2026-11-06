@@ -7,7 +7,7 @@ object AppInfo {
 
     const val APP_NAME = "ClipBait"
 
-    const val VERSION_NAME = "1.1.1"
+    const val VERSION_NAME = "1.1.2"
 
     const val AUTHOR = "pgntgz"
 

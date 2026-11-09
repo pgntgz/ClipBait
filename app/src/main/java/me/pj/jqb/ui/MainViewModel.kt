@@ -27,7 +27,9 @@ import me.pj.jqb.HookState
 import me.pj.jqb.data.db.AppInterceptStat
 import me.pj.jqb.data.receiver.AuditLogReceiver
 import me.pj.jqb.data.repo.DecoySourceType
+import me.pj.jqb.data.repo.ReleaseUpdateInfo
 import me.pj.jqb.data.repo.SmartAppClassifier
+import me.pj.jqb.data.repo.UpdateChecker
 import me.pj.jqb.data.repo.WikiRandomFetcher
 import me.pj.jqb.hook.DecoyGenerator
 import me.pj.jqb.model.ActionType
@@ -35,6 +37,9 @@ import me.pj.jqb.model.AuditRecord
 import me.pj.jqb.model.ConfigModel
 import me.pj.jqb.model.TriggerType
 import me.pj.jqb.ui.components.AppIconCache
+import me.pj.jqb.ui.components.HallOfFamePosterGenerator
+import me.pj.jqb.ui.components.PosterGenerationResult
+import kotlinx.coroutines.withContext
 import java.util.Calendar
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -198,12 +203,75 @@ class MainViewModel : ViewModel() {
     private val _isScanningSmart = MutableStateFlow(false)
     val isScanningSmart: StateFlow<Boolean> = _isScanningSmart.asStateFlow()
 
+    private val _updateInfo = MutableStateFlow<ReleaseUpdateInfo?>(null)
+    val updateInfo: StateFlow<ReleaseUpdateInfo?> = _updateInfo.asStateFlow()
+
+    private val _isCheckingUpdate = MutableStateFlow(false)
+    val isCheckingUpdate: StateFlow<Boolean> = _isCheckingUpdate.asStateFlow()
+
     init {
         refreshUsagePermissionState()
         loadInstalledApps()
         recheckHookState()
         pullPendingAudits()
         pruneOldAuditLogs()
+        autoCheckUpdateIfEnabled()
+    }
+
+    private fun autoCheckUpdateIfEnabled() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val settings = configRepo.getConfig().settings
+                if (settings.updateCheckMode != "auto") return@launch
+                val now = System.currentTimeMillis()
+                // Throttle automatic startup check to once every 6 hours
+                if ((now - settings.lastUpdateCheckTime) < 6 * 3600_000L && _updateInfo.value != null) {
+                    return@launch
+                }
+                _isCheckingUpdate.value = true
+                val info = UpdateChecker.checkLatestRelease()
+                _updateInfo.value = info
+                configRepo.markUpdateCheckedNow(now)
+            } catch (_: Exception) {
+            } finally {
+                _isCheckingUpdate.value = false
+            }
+        }
+    }
+
+    fun setUpdateCheckMode(mode: String) {
+        viewModelScope.launch {
+            configRepo.setUpdateCheckMode(mode)
+            if (mode == "off") {
+                _updateInfo.value = null
+            } else if (mode == "auto" && _updateInfo.value == null) {
+                checkForUpdatesNow( null)
+            }
+        }
+    }
+
+    fun checkForUpdatesNow(onComplete: ((Result<ReleaseUpdateInfo>) -> Unit)? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isCheckingUpdate.value = true
+            try {
+                val info = UpdateChecker.checkLatestRelease()
+                _updateInfo.value = info
+                configRepo.markUpdateCheckedNow(System.currentTimeMillis())
+                if (onComplete != null) {
+                    withContext(Dispatchers.Main) {
+                        onComplete(Result.success(info))
+                    }
+                }
+            } catch (e: Exception) {
+                if (onComplete != null) {
+                    withContext(Dispatchers.Main) {
+                        onComplete(Result.failure(e))
+                    }
+                }
+            } finally {
+                _isCheckingUpdate.value = false
+            }
+        }
     }
 
     fun refreshUsagePermissionState() {
@@ -260,8 +328,39 @@ class MainViewModel : ViewModel() {
     private fun pruneOldAuditLogs() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val retentionDays = configRepo.getConfig().settings.auditLog.retentionDays
-                val cutoff = System.currentTimeMillis() - (retentionDays.toLong() * 86_400_000L)
+                val cfg = configRepo.getConfig()
+                val auditCfg = cfg.settings.auditLog
+                val retentionDays = auditCfg.retentionDays
+                // retentionDays <= 0 means "永久保留" (Forever)
+                if (retentionDays <= 0) return@launch
+
+                val now = System.currentTimeMillis()
+                if (auditCfg.periodicPosterEnabled) {
+                    val intervalMs = auditCfg.posterIntervalDays.coerceAtLeast(1).toLong() * 86_400_000L
+                    if (auditCfg.lastPosterGeneratedAt == 0L) {
+                        configRepo.markPosterGeneratedNow(now)
+                    } else if ((now - auditCfg.lastPosterGeneratedAt) >= intervalMs) {
+                        val totalCount = dao.getTotalCountSnapshot()
+                        if (totalCount > 0) {
+                            val rawOffenders = dao.getTopOffendersSnapshot(6).map { stat ->
+                                stat.copy(appName = AppIconCache.resolveLabel(app, stat.packageName, stat.appName))
+                            }
+                            val isEn = resolveIsEnglish(cfg.settings.language)
+                            HallOfFamePosterGenerator.generateAndNotify(
+                                context = app,
+                                offenders = rawOffenders,
+                                totalCount = totalCount,
+                                periodStyle = auditCfg.posterPeriodStyle,
+                                intervalDays = auditCfg.posterIntervalDays,
+                                isEn = isEn,
+                                postNotification = true
+                            )
+                            configRepo.markPosterGeneratedNow(now)
+                        }
+                    }
+                }
+
+                val cutoff = now - (retentionDays.toLong() * 86_400_000L)
                 dao.deleteOlderThan(cutoff)
             } catch (_: Exception) {
             }
@@ -490,6 +589,53 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             configRepo.setRetentionDays(days)
             pruneOldAuditLogs()
+        }
+    }
+
+    fun setPeriodicPosterEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            configRepo.setPeriodicPosterEnabled(enabled)
+        }
+    }
+
+    fun setPosterIntervalDays(days: Int) {
+        viewModelScope.launch {
+            configRepo.setPosterIntervalDays(days)
+        }
+    }
+
+    fun setPosterPeriodStyle(style: String) {
+        viewModelScope.launch {
+            configRepo.setPosterPeriodStyle(style)
+        }
+    }
+
+    fun generatePosterNow(
+        styleOverride: String? = null,
+        onResult: (PosterGenerationResult) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val cfg = configRepo.getConfig()
+            val auditCfg = cfg.settings.auditLog
+            val isEn = resolveIsEnglish(cfg.settings.language)
+            val totalCount = dao.getTotalCountSnapshot()
+            val offenders = dao.getTopOffendersSnapshot(6).map { stat ->
+                stat.copy(appName = AppIconCache.resolveLabel(app, stat.packageName, stat.appName))
+            }
+            val effectiveStyle = styleOverride ?: auditCfg.posterPeriodStyle
+            val result = HallOfFamePosterGenerator.generateAndNotify(
+                context = app,
+                offenders = offenders,
+                totalCount = totalCount,
+                periodStyle = effectiveStyle,
+                intervalDays = if (auditCfg.retentionDays <= 0) 0 else auditCfg.posterIntervalDays,
+                isEn = isEn,
+                postNotification = true
+            )
+            configRepo.markPosterGeneratedNow(System.currentTimeMillis())
+            withContext(Dispatchers.Main) {
+                onResult(result)
+            }
         }
     }
 

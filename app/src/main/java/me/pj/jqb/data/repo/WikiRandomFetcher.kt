@@ -1,8 +1,12 @@
 package me.pj.jqb.data.repo
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.net.HttpURLConnection
@@ -330,31 +334,84 @@ object WikiRandomFetcher {
     }
 
     private suspend fun fetchUncyclopediaEntries(count: Int = 3): List<String> = withContext(Dispatchers.IO) {
-        val results = mutableListOf<String>()
-        var lastError: String? = null
-        repeat(count) {
+        val collected = LinkedHashSet<String>()
+        val errors = mutableListOf<String>()
+
+        // 1. Prioritize Miraheze-hosted Chinese Uncyclopedia sister wikis (伪基文库 & 伪基新闻)
+        // which do not have Cloudflare JS challenge shields and return 100% Chinese satirical content,
+        // followed by official Uncyclopedia mirrors as fallback.
+        val batchLimit = (count + 2).coerceIn(3, 10)
+        val endpoints = listOf(
+            "https://unbooks.miraheze.org/w/api.php?action=query&format=json&generator=random&grnnamespace=0&grnlimit=$batchLimit&prop=extracts|revisions&exintro=1&explaintext=1&rvprop=content",
+            "https://unnews.miraheze.org/w/api.php?action=query&format=json&generator=random&grnnamespace=0&grnlimit=$batchLimit&prop=extracts|revisions&exintro=1&explaintext=1&rvprop=content",
+            "https://zh.uncyclopedia.info/api.php?action=query&format=json&generator=random&grnnamespace=0&grnlimit=$batchLimit&prop=extracts&exintro=1&explaintext=1",
+            "https://en.uncyclopedia.co/w/api.php?action=query&format=json&generator=random&grnnamespace=0&grnlimit=$batchLimit&prop=extracts&exintro=1&explaintext=1",
+            "https://uncyclopedia.com/w/api.php?action=query&format=json&generator=random&grnnamespace=0&grnlimit=$batchLimit&prop=extracts&exintro=1&explaintext=1"
+        )
+
+        // Shuffle the first two Chinese Miraheze endpoints so each draw mixes 伪基文库 and 伪基新闻
+        val orderedEndpoints = endpoints.take(2).shuffled() + endpoints.drop(2)
+        for (endpoint in orderedEndpoints) {
+            if (collected.size >= count) break
             try {
-                val online = tryFetchSingleUncyclopediaSummary()
-                results.add(online)
+                val batch = tryFetchUncyclopediaBatch(endpoint, count - collected.size)
+                collected.addAll(batch)
             } catch (e: Exception) {
-                lastError = e.message ?: e.javaClass.simpleName
+                errors.add(e.message ?: e.javaClass.simpleName)
             }
         }
-        if (results.isEmpty()) {
-            throw IllegalStateException("伪基大典请求失败：${lastError ?: "未知网络错误"}（请检查梯子分流，或目标站点触发了 Cloudflare 盾拦截）")
+
+        if (collected.isEmpty()) {
+            throw IllegalStateException(
+                "伪基大典请求失败：${errors.distinct().joinToString(" | ").ifBlank { "未知网络错误" }}"
+            )
         }
-        results.distinct()
+        collected.take(count)
     }
 
     private suspend fun fetchChouxiangWorldEntries(count: Int = 3): List<String> = withContext(Dispatchers.IO) {
-        val scraped = tryFetchChouxiangWorldQuotes(count)
-            .filterNot { isBlacklistedBoilerplate(it) }
-            .distinct()
-            .take(count)
-        if (scraped.isEmpty()) {
-            throw IllegalStateException("抽象世界 (chouxiang.world) 抓取失败：静态 HTML 中未解析到有效段子（目标站点可能改为纯前端动态渲染或接口不可用）")
+        val collected = LinkedHashSet<String>()
+        var lastError: String? = null
+
+        // chouxiang.world renders 1 random SSR quote per HTTP GET request.
+        // Fetch concurrently with cache-busting query params until [count] unique quotes are collected.
+        var round = 0
+        while (collected.size < count && round < 3) {
+            val needed = (count - collected.size).coerceAtLeast(1)
+            val batchSize = if (round == 0) needed + 1 else needed
+            val roundIdx = round
+            val results = coroutineScope {
+                (0 until batchSize).map { idx ->
+                    async(Dispatchers.IO) {
+                        runCatching {
+                            tryFetchChouxiangWorldQuotes(
+                                count = 2,
+                                cacheBuster = "${System.nanoTime()}_${roundIdx}_$idx"
+                            )
+                        }
+                    }
+                }.awaitAll()
+            }
+            for (res in results) {
+                res.onSuccess { list ->
+                    list.filterNot { isBlacklistedBoilerplate(it) }.forEach { quote ->
+                        if (collected.size < count) {
+                            collected.add(quote)
+                        }
+                    }
+                }.onFailure { e ->
+                    lastError = e.message ?: e.javaClass.simpleName
+                }
+            }
+            round++
         }
-        scraped
+
+        if (collected.isEmpty()) {
+            throw IllegalStateException(
+                lastError ?: "抽象世界 (chouxiang.world) 抓取失败：静态 HTML 中未解析到有效段子"
+            )
+        }
+        collected.take(count)
     }
 
     private fun generateFakeShareToken(): String {
@@ -407,64 +464,129 @@ object WikiRandomFetcher {
         }
     }
 
-    private fun tryFetchSingleUncyclopediaSummary(): String {
-        val endpoints = listOf(
-            "https://uncyclopedia.ca/w/api.php?action=query&format=json&generator=random&grnnamespace=0&prop=extracts&exintro=1&explaintext=1",
-            "https://zh.uncyclopedia.info/api.php?action=query&format=json&generator=random&grnnamespace=0&prop=extracts&exintro=1&explaintext=1"
-        )
-        val errors = mutableListOf<String>()
-        for (endpoint in endpoints) {
-            var conn: HttpURLConnection? = null
-            try {
-                val url = URL(endpoint)
-                conn = (url.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"
-                    connectTimeout = 4000
-                    readTimeout = 4000
-                    setRequestProperty("Accept", "application/json")
-                    setRequestProperty("User-Agent", "ClipBait/1.1 (Android OpenSource Privacy Module)")
-                }
-                val code = conn.responseCode
-                if (code == 200) {
-                    val body = conn.inputStream.bufferedReader().use { it.readText() }
-                    val pages = json.parseToJsonElement(body)
-                        .jsonObject["query"]
-                        ?.jsonObject?.get("pages")
-                        ?.jsonObject
-                    val firstPage = pages?.values?.firstOrNull()?.jsonObject
-                    val title = firstPage?.get("title")?.jsonPrimitive?.content?.trim()
-                    val extract = firstPage?.get("extract")?.jsonPrimitive?.content
-                        ?.replace(Regex("\\s+"), " ")
-                        ?.trim()
-                    if (!title.isNullOrBlank() && !extract.isNullOrBlank() && extract.length >= 12) {
-                        return "$title：$extract"
-                    } else {
-                        errors.add("${url.host}: 随机到了空词条或无正文条目")
-                    }
-                } else {
-                    errors.add("${url.host}: HTTP $code ${conn.responseMessage.orEmpty()}")
-                }
-            } catch (e: Exception) {
-                errors.add("${e.javaClass.simpleName}: ${e.message}")
-            } finally {
-                try {
-                    conn?.disconnect()
-                } catch (_: Throwable) {
-                }
-            }
-        }
-        throw IllegalStateException(errors.joinToString(" | "))
-    }
-
-    private fun tryFetchChouxiangWorldQuotes(count: Int): List<String> {
+    private fun tryFetchUncyclopediaBatch(endpoint: String, maxWanted: Int): List<String> {
         var conn: HttpURLConnection? = null
         try {
-            val url = URL("https://chouxiang.world/")
+            val url = URL(endpoint)
             conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 4000
-                readTimeout = 4000
-                setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) ClipBait/1.1")
+                connectTimeout = 5000
+                readTimeout = 5000
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty(
+                    "User-Agent",
+                    "Mozilla/5.0 (Linux; Android 15; Pixel 9 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36 ClipBait/1.1"
+                )
+            }
+            val code = conn.responseCode
+            if (code == 200) {
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                val pages = json.parseToJsonElement(body)
+                    .jsonObject["query"]
+                    ?.jsonObject?.get("pages")
+                    ?.jsonObject
+                    ?: throw IllegalStateException("${url.host}: JSON 缺少 query.pages")
+
+                val items = mutableListOf<String>()
+                for (entry in pages.values) {
+                    val pageObj = entry.jsonObject
+                    val title = pageObj["title"]?.jsonPrimitive?.content?.trim().orEmpty()
+                    if (title.isBlank()) continue
+
+                    val rawExtract = pageObj["extract"]?.jsonPrimitive?.content.orEmpty()
+                    val cleanedExtract = cleanUncyclopediaWikitext(rawExtract)
+
+                    val rawRevision = pageObj["revisions"]
+                        ?.jsonArray
+                        ?.firstOrNull()
+                        ?.jsonObject
+                        ?.get("*")
+                        ?.jsonPrimitive
+                        ?.content
+                        .orEmpty()
+                    val cleanedRevision = cleanUncyclopediaWikitext(rawRevision)
+
+                    val chosenBody = when {
+                        cleanedExtract.length >= 16 -> cleanedExtract
+                        cleanedRevision.length >= 16 -> cleanedRevision
+                        cleanedExtract.isNotBlank() -> cleanedExtract
+                        else -> ""
+                    }.take(320).trim()
+
+                    if (chosenBody.length >= 12) {
+                        val combined = if (chosenBody.startsWith(title)) {
+                            chosenBody
+                        } else {
+                            "$title：$chosenBody"
+                        }
+                        items.add(combined)
+                        if (items.size >= maxWanted) break
+                    }
+                }
+                if (items.isEmpty()) {
+                    throw IllegalStateException("${url.host}: 随机到了空词条或无正文条目")
+                }
+                return items
+            } else {
+                throw IllegalStateException("${url.host}: HTTP $code ${conn.responseMessage.orEmpty()}")
+            }
+        } catch (e: Exception) {
+            throw IllegalStateException("${e.javaClass.simpleName}: ${e.message}")
+        } finally {
+            try {
+                conn?.disconnect()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    private fun cleanUncyclopediaWikitext(raw: String): String {
+        if (raw.isBlank()) return ""
+        var text = raw
+        // Strip nested MediaWiki templates {{...}}
+        repeat(3) {
+            text = text.replace(Regex("\\{\\{[^{}]*\\}\\}"), " ")
+        }
+        // Strip MediaWiki tables {| ... |}
+        text = text.replace(Regex("(?s)\\{\\|.*?\\|\\}"), " ")
+        // Strip File/Image/Category links
+        text = text.replace(
+            Regex("(?i)\\[\\[(?:File|Image|Category|文件|檔案|分類|分类):[^\\]]*\\]\\]"),
+            " "
+        )
+        // Convert [[target|label]] -> label, [[target]] -> target
+        text = text.replace(Regex("\\[\\[(?:[^|\\]]*\\|)?([^\\]]+)\\]\\]"), "$1")
+        // Convert external links [https://... label] -> label
+        text = text.replace(Regex("\\[https?://[^\\s\\]]+\\s*([^\\]]*)\\]"), "$1")
+        // Convert language conversion tags -{...}- -> inner text
+        text = text.replace(Regex("-\\{([^}]*)\\}-"), "$1")
+        // Strip interwiki prefixes like unc:, unb:, unn:, Category:
+        text = text.replace(Regex("(?i)\\b(?:unc|unb|unn|unm|und|category):"), "")
+        // Strip HTML tags and headings
+        text = text.replace(Regex("<[^>]+>"), " ")
+        text = text.replace(Regex("={2,}\\s*[^=]+\\s*={2,}"), " ")
+        text = text.replace(Regex("'{2,}"), "")
+        text = text.replace(Regex("\\s+"), " ").trim()
+        return text
+    }
+
+    private fun tryFetchChouxiangWorldQuotes(count: Int, cacheBuster: String = ""): List<String> {
+        var conn: HttpURLConnection? = null
+        try {
+            val urlStr = if (cacheBuster.isNotBlank()) {
+                "https://chouxiang.world/?_t=$cacheBuster"
+            } else {
+                "https://chouxiang.world/"
+            }
+            val url = URL(urlStr)
+            conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 4500
+                readTimeout = 4500
+                useCaches = false
+                setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
+                setRequestProperty("Pragma", "no-cache")
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 15) ClipBait/1.1")
             }
             val code = conn.responseCode
             if (code == 200) {
@@ -479,7 +601,7 @@ object WikiRandomFetcher {
                     .replace(Regex("(?is)<footer\\b[^>]*>.*?</footer>"), " ")
 
                 val candidates = mutableListOf<String>()
-                val tagRegex = Regex(">(?:\\s*)([^<>]{14,})(?:\\s*)<")
+                val tagRegex = Regex(">(?:\\s*)([^<>]{10,})(?:\\s*)<")
                 tagRegex.findAll(bodyHtml).forEach { m ->
                     val text = m.groupValues[1]
                         .replace("&quot;", "\"")
@@ -492,7 +614,7 @@ object WikiRandomFetcher {
                     val isBoilerplate = chouxiangBoilerplateBlacklist.any { bad ->
                         text.equals(bad, ignoreCase = true) || text.contains("没有抽象段子的无聊世界")
                     }
-                    if (cjkCount >= 12 &&
+                    if (cjkCount >= 8 &&
                         !isBoilerplate &&
                         !text.contains("function(") &&
                         !text.contains("window.") &&

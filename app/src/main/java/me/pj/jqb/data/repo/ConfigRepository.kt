@@ -172,6 +172,23 @@ class ConfigRepository(private val context: Context) {
         }
     }
 
+    suspend fun setUpdateCheckMode(mode: String) = withContext(Dispatchers.IO) {
+        val valid = if (mode in setOf("auto", "manual", "off")) mode else "auto"
+        updateConfig { current ->
+            current.copy(
+                settings = current.settings.copy(updateCheckMode = valid)
+            )
+        }
+    }
+
+    suspend fun markUpdateCheckedNow(timestamp: Long = System.currentTimeMillis()) = withContext(Dispatchers.IO) {
+        updateConfig { current ->
+            current.copy(
+                settings = current.settings.copy(lastUpdateCheckTime = timestamp)
+            )
+        }
+    }
+
     suspend fun setSmartFallbackAction(fallbackKey: String) = withContext(Dispatchers.IO) {
         updateConfig { current ->
             // Also clear hardcoded smartFallback on existing smart rules so the global setting applies everywhere
@@ -275,10 +292,57 @@ class ConfigRepository(private val context: Context) {
     }
 
     suspend fun setRetentionDays(days: Int) = withContext(Dispatchers.IO) {
+        val normalized = if (days <= 0) 0 else days.coerceIn(1, 365)
         updateConfig { current ->
             current.copy(
                 settings = current.settings.copy(
-                    auditLog = current.settings.auditLog.copy(retentionDays = days.coerceIn(1, 365))
+                    auditLog = current.settings.auditLog.copy(retentionDays = normalized)
+                )
+            )
+        }
+    }
+
+    suspend fun setPeriodicPosterEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
+        updateConfig { current ->
+            current.copy(
+                settings = current.settings.copy(
+                    auditLog = current.settings.auditLog.copy(periodicPosterEnabled = enabled)
+                )
+            )
+        }
+    }
+
+    suspend fun setPosterIntervalDays(days: Int) = withContext(Dispatchers.IO) {
+        val validDays = days.coerceIn(1, 365)
+        val autoStyle = if (validDays >= 180) "year" else "month"
+        updateConfig { current ->
+            current.copy(
+                settings = current.settings.copy(
+                    auditLog = current.settings.auditLog.copy(
+                        posterIntervalDays = validDays,
+                        posterPeriodStyle = autoStyle
+                    )
+                )
+            )
+        }
+    }
+
+    suspend fun setPosterPeriodStyle(style: String) = withContext(Dispatchers.IO) {
+        val validStyle = if (style == "year") "year" else "month"
+        updateConfig { current ->
+            current.copy(
+                settings = current.settings.copy(
+                    auditLog = current.settings.auditLog.copy(posterPeriodStyle = validStyle)
+                )
+            )
+        }
+    }
+
+    suspend fun markPosterGeneratedNow(timestamp: Long = System.currentTimeMillis()) = withContext(Dispatchers.IO) {
+        updateConfig { current ->
+            current.copy(
+                settings = current.settings.copy(
+                    auditLog = current.settings.auditLog.copy(lastPosterGeneratedAt = timestamp)
                 )
             )
         }

@@ -7,7 +7,11 @@ object AppInfo {
 
     const val APP_NAME = "ClipBait"
 
-    const val VERSION_NAME = "1.1.2"
+    const val VERSION_CODE: Int = BuildConfig.VERSION_CODE
+
+    const val VERSION_NAME: String = BuildConfig.VERSION_NAME
+
+    const val RELEASES_URL = "https://github.com/pgntgz/ClipBait/releases"
 
     const val AUTHOR = "pgntgz"
 

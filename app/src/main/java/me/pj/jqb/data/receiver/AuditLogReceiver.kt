@@ -348,7 +348,7 @@ class AuditLogReceiver : BroadcastReceiver() {
                 val contentPendingIntent = PendingIntent.getActivity(context, 0, openIntent, pendingFlags)
 
                 val notification = NotificationCompat.Builder(context, INTERCEPT_CHANNEL_ID)
-                    .setSmallIcon(R.mipmap.ic_launcher_round)
+                    .setSmallIcon(R.drawable.ic_stat_clipbait)
                     .setContentTitle(title)
                     .setContentText(shortSummary)
                     .setStyle(NotificationCompat.BigTextStyle().bigText(expandedBody))

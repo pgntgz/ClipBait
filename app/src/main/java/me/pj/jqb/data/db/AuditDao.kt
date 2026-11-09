@@ -45,6 +45,12 @@ interface AuditDao {
     @Query("SELECT packageName, MAX(appName) as appName, COUNT(*) as count FROM audit_records GROUP BY packageName ORDER BY count DESC LIMIT :limit")
     fun getTopOffenders(limit: Int = 6): Flow<List<AppInterceptStat>>
 
+    @Query("SELECT packageName, MAX(appName) as appName, COUNT(*) as count FROM audit_records GROUP BY packageName ORDER BY count DESC LIMIT :limit")
+    suspend fun getTopOffendersSnapshot(limit: Int = 6): List<AppInterceptStat>
+
+    @Query("SELECT COUNT(*) FROM audit_records")
+    suspend fun getTotalCountSnapshot(): Int
+
     @Query("UPDATE audit_records SET appName = :realAppName WHERE packageName = :pkg AND (appName = :pkg OR appName = '')")
     suspend fun fixLegacyAppName(pkg: String, realAppName: String)
 

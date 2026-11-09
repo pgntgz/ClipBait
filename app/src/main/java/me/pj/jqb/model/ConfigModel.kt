@@ -28,6 +28,11 @@ data class SettingsConfig(
     val defaultAction: String = "direct",
     @SerialName("language")
     val language: String = "system", // system | zh | en
+    // "auto" | "manual" | "off"
+    @SerialName("update_check_mode")
+    val updateCheckMode: String = "auto",
+    @SerialName("last_update_check_time")
+    val lastUpdateCheckTime: Long = 0L,
     @SerialName("smart_detect")
     val smartDetect: SmartDetectConfig = SmartDetectConfig(),
     @SerialName("audit_log")
@@ -71,7 +76,16 @@ data class AuditLogConfig(
     @SerialName("confetti_enabled")
     val confettiEnabled: Boolean = true,
     @SerialName("haptic_enabled")
-    val hapticEnabled: Boolean = true
+    val hapticEnabled: Boolean = true,
+    @SerialName("periodic_poster_enabled")
+    val periodicPosterEnabled: Boolean = true,
+    @SerialName("poster_interval_days")
+    val posterIntervalDays: Int = 30,
+    // "month" | "year"
+    @SerialName("poster_period_style")
+    val posterPeriodStyle: String = "month",
+    @SerialName("last_poster_generated_at")
+    val lastPosterGeneratedAt: Long = 0L
 ) {
     fun effectiveAlertMode(): String {
         return when {

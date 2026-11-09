@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Monochrome status bar icon: Shield with Clipboard cutout (evenOdd fill for crisp alpha mask) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M12,2 L4,5.5 V11.5 C4,16.85 7.4,21.78 12,23 C16.6,21.78 20,16.85 20,11.5 V5.5 L12,2 Z M10.5,6.5 H13.5 C14.05,6.5 14.5,6.95 14.5,7.5 V8 H16 C16.55,8 17,8.45 17,9 V16.5 C17,17.05 16.55,17.5 16,17.5 H8 C7.45,17.5 7,17.05 7,16.5 V9 C7,8.45 7.45,8 8,8 H9.5 V7.5 C9.5,6.95 9.95,6.5 10.5,6.5 Z M11,7.5 V8.8 H13 V7.5 H11 Z M8.8,10 V15.8 H15.2 V10 H8.8 Z M10,11.5 H14 V12.7 H10 V11.5 Z M10,13.6 H12.8 V14.8 H10 V13.6 Z" />
+</vector>

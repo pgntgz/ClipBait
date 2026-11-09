@@ -1385,32 +1385,43 @@ fun AuditDetailBottomSheet(
                 // 1. App Header with Icon, Metadata & Direct Confetti Button
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.Top
                 ) {
-                    AppIcon(packageName = packageName, size = 52.dp, cornerRadius = 12.dp)
+                    AppIcon(
+                        packageName = packageName,
+                        size = 52.dp,
+                        cornerRadius = 12.dp,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
                     Spacer(modifier = Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = appMeta.appName,
                             style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = packageName,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline
+                            color = MaterialTheme.colorScheme.outline,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "v${appMeta.versionName.ifBlank { "1.0" }}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(top = 2.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text(
-                                text = "v${appMeta.versionName.ifBlank { "1.0" }}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
                             Surface(
                                 shape = RoundedCornerShape(4.dp),
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -1419,10 +1430,11 @@ fun AuditDetailBottomSheet(
                                     text = "TargetSDK ${appMeta.targetSdk}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(6.dp))
                             Surface(
                                 shape = RoundedCornerShape(4.dp),
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -1431,7 +1443,9 @@ fun AuditDetailBottomSheet(
                                     text = "UID ${appMeta.uid}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
                         }
@@ -1764,10 +1778,11 @@ fun AuditDetailBottomSheet(
                             TriggerType.fromCode(it.triggerReason) == TriggerType.BACKGROUND_SILENT ||
                                 it.processName.contains(":")
                         }
+                        val fgPollHits = (allRecordsForApp.size - resumeHits - bgHits).coerceAtLeast(0)
                         Text(
                             text = tr(
-                                "刚打开就伸手 $resumeHits 次 · 躲在后台或子进程摸兜 $bgHits 次",
-                                "$resumeHits reads on launch · $bgHits silent background/subprocess reads"
+                                "刚切前台 $resumeHits 次 · 前台无粘贴 $fgPollHits 次 · 后台/子进程 $bgHits 次",
+                                "$resumeHits on launch · $fgPollHits foreground no-paste · $bgHits background"
                             ),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.outline
@@ -1793,6 +1808,8 @@ private fun buildAppSpecificMotiveNote(pkg: String, record: AuditRecord?, isEn: 
     val isSub = record?.processName?.contains(":") == true
     if (isEn) {
         return when {
+            lower == "com.google.android.as" || lower.contains("systemintelligence") ->
+                "Android System Intelligence (com.google.android.as) is Google/AOSP's system TextClassifier & ContentCapture service. Whenever you copy text or focus an input box, Android wakes it up to scan the clipboard for URLs, addresses, phone numbers, and OTP codes to show smart paste chips on Gboard. Blocking it is completely safe if you don't want system AI scanning your clipboard."
             isSub -> "Notice the process name: '${record?.processName}' is a background subprocess reading your clipboard without you even opening the main UI. Block or Spoof recommended."
             lower.contains("taobao") || lower.contains("pinduoduo") || lower.contains("jingdong") || lower.contains("jd.") || lower.contains("idlefish") ->
                 "Typical e-commerce app: scans for share tokens and competitor links on every launch. Set it to Spoof to feed its recommendation algorithm pure nonsense."
@@ -1805,6 +1822,8 @@ private fun buildAppSpecificMotiveNote(pkg: String, record: AuditRecord?, isEn: 
         }
     }
     return when {
+        lower == "com.google.android.as" || lower.contains("systemintelligence") ->
+            "这是 Android 系统的「Android System Intelligence（系统智能服务）」。每当你复制文字或点开输入框时，系统都会唤醒它去扫描剪贴板里的网址、地址、手机号、快递单号或验证码，用来给输入法顶部提供「智能粘贴气泡」和实时翻译识别。因为它是被系统服务直接绑定的高优先级进程，所以每次都会被抓到「前台无粘贴偷读」。如果你不需要系统 AI 自动识别你复制的内容，直接挂在「阻断」完全不影响正常用手机。"
         isSub -> "注意看进程名：这次居然是「${record?.processName}」子进程在后台偷读的，连你打开主界面的功夫都不想等，建议直接「阻断」或「伪装」伺候。"
         lower.contains("taobao") || lower.contains("pinduoduo") || lower.contains("jingdong") || lower.contains("jd.") || lower.contains("idlefish") ->
             "典型电商软件：一打开就扫口令和竞品链接。你如果给它开「伪装」模式塞几条假口令或抽象怪话，它后台的猜你喜欢算法很快就会开始怀疑人生。"

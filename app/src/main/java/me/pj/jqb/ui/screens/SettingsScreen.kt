@@ -10,6 +10,7 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,11 +22,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Block
@@ -47,6 +51,7 @@ import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material.icons.outlined.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -66,18 +71,22 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -88,9 +97,11 @@ import me.pj.jqb.HookState
 import me.pj.jqb.model.ActionType
 import me.pj.jqb.ui.MainViewModel
 import me.pj.jqb.ui.components.ActionPillSelector
+import me.pj.jqb.ui.components.PosterGenerationResult
 import me.pj.jqb.ui.components.tickHaptic
 import me.pj.jqb.ui.isEnglishLocale
 import me.pj.jqb.ui.tr
+import java.util.Calendar
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -100,6 +111,8 @@ fun SettingsScreen(viewModel: MainViewModel) {
     val hookState by viewModel.hookState.collectAsState()
     val hasUsagePermission by viewModel.hasUsagePermissionState.collectAsState()
     val config by viewModel.configState.collectAsState()
+    val updateInfo by viewModel.updateInfo.collectAsState()
+    val isCheckingUpdate by viewModel.isCheckingUpdate.collectAsState()
     val isEn = isEnglishLocale()
 
     val hapticEnabled = config.settings.auditLog.hapticEnabled
@@ -123,6 +136,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
     var resumeWindowMs by remember(config.settings.smartDetect.resumeWindowMs) {
         mutableFloatStateOf(config.settings.smartDetect.resumeWindowMs.toFloat())
     }
+    var posterPreview by remember { mutableStateOf<PosterGenerationResult?>(null) }
 
     Scaffold(
         topBar = {
@@ -679,8 +693,15 @@ fun SettingsScreen(viewModel: MainViewModel) {
             // 4. Audit Log, Favorite Leaderboard & Data Cleanup
             item {
                 val retentionDays = config.settings.auditLog.retentionDays
-                val dayOptions = listOf(3, 7, 15, 30, 90)
+                // 0 = 永久保留 (Forever)
+                val dayOptions = listOf(3, 7, 15, 30, 90, 0)
                 val favoriteEnabled = config.settings.auditLog.favoriteLeaderboardEnabled
+                val periodicPosterEnabled = config.settings.auditLog.periodicPosterEnabled
+                val posterIntervalDays = config.settings.auditLog.posterIntervalDays
+                val posterPeriodStyle = config.settings.auditLog.posterPeriodStyle
+                val cal = remember { Calendar.getInstance() }
+                val curYear = cal.get(Calendar.YEAR)
+                val curMonth = cal.get(Calendar.MONTH) + 1
 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -823,13 +844,18 @@ fun SettingsScreen(viewModel: MainViewModel) {
                         Spacer(modifier = Modifier.height(12.dp))
 
                         Text(
-                            text = tr("旧账保留多久（超期自动清）：", "Auto-prune logs older than:"),
+                            text = tr("旧账保留多久（超期自动清，或永久保留）：", "Log retention & cleanup cycle:"),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                             dayOptions.forEachIndexed { index, days ->
+                                val label = when {
+                                    days <= 0 -> tr("永久", "Forever")
+                                    isEn -> "${days}d"
+                                    else -> "${days}天"
+                                }
                                 SegmentedButton(
                                     selected = retentionDays == days,
                                     onClick = {
@@ -837,10 +863,185 @@ fun SettingsScreen(viewModel: MainViewModel) {
                                         viewModel.setRetentionDays(days)
                                     },
                                     shape = SegmentedButtonDefaults.itemShape(index = index, count = dayOptions.size),
-                                    label = { Text(if (isEn) "${days}d" else "${days}天", maxLines = 1) }
+                                    label = {
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    }
                                 )
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                if (retentionDays > 0) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = tr(
+                                                    "定期生成并推送「${curMonth}月份 / ${curYear}年」积分榜图片",
+                                                    "Send periodic Monthly / Yearly Standings Poster"
+                                                ),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = tr(
+                                                    "勾选后，在清空旧账周期到来前自动为你画好一张高分率「${curYear}年${curMonth}月」或「${curYear}年度」积分榜战报图，存入相册并发通知提醒。",
+                                                    "Automatically renders a high-res Monthly or Yearly Standings poster image before pruning old logs, saves it to Gallery, and notifies you."
+                                                ),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Switch(
+                                            checked = periodicPosterEnabled,
+                                            onCheckedChange = {
+                                                view.tickHaptic(hapticEnabled)
+                                                viewModel.setPeriodicPosterEnabled(it)
+                                            }
+                                        )
+                                    }
+
+                                    if (periodicPosterEnabled) {
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Text(
+                                            text = tr("每隔多少天给你发一张积分榜图：", "Send poster every:"),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        val intervalOptions = listOf(7, 15, 30, 90, 365)
+                                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                                            intervalOptions.forEachIndexed { idx, d ->
+                                                val intervalLabel = when {
+                                                    d == 365 -> tr("365天", "1yr")
+                                                    isEn -> "${d}d"
+                                                    else -> "${d}天"
+                                                }
+                                                SegmentedButton(
+                                                    selected = posterIntervalDays == d,
+                                                    onClick = {
+                                                        view.tickHaptic(hapticEnabled)
+                                                        viewModel.setPosterIntervalDays(d)
+                                                    },
+                                                    shape = SegmentedButtonDefaults.itemShape(index = idx, count = intervalOptions.size),
+                                                    label = {
+                                                        Text(
+                                                            text = intervalLabel,
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            maxLines = 1,
+                                                            softWrap = false
+                                                        )
+                                                    }
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        val styleOptions = listOf(
+                                            "month" to tr("${curMonth}月份积分榜", "Monthly (${curYear}-${curMonth})"),
+                                            "year" to tr("${curYear}年积分榜", "Yearly ($curYear)")
+                                        )
+                                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                                            styleOptions.forEachIndexed { idx, (styleKey, styleLabel) ->
+                                                SegmentedButton(
+                                                    selected = posterPeriodStyle == styleKey,
+                                                    onClick = {
+                                                        view.tickHaptic(hapticEnabled)
+                                                        viewModel.setPosterPeriodStyle(styleKey)
+                                                    },
+                                                    shape = SegmentedButtonDefaults.itemShape(index = idx, count = styleOptions.size),
+                                                    label = {
+                                                        Text(
+                                                            text = styleLabel,
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            maxLines = 1,
+                                                            softWrap = false
+                                                        )
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                } else {
+                                    Text(
+                                        text = tr(
+                                            "当前已设为「永久保留」，旧账不会自动清空。你随时可以手动生成本月或本年的积分榜战报图：",
+                                            "Logs are set to Forever retention. You can generate a Monthly or Yearly Standings poster anytime:"
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    FilledTonalButton(
+                                        onClick = {
+                                            view.tickHaptic(hapticEnabled, confirm = true)
+                                            viewModel.generatePosterNow(styleOverride = "month") { res ->
+                                                posterPreview = res
+                                                Toast.makeText(
+                                                    context,
+                                                    if (isEn) "Saved to Pictures/ClipBait & notified" else "已生成「${res.titleText}」存入相册并推送通知",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                                    ) {
+                                        Text(
+                                            text = tr("生成${curMonth}月份积分榜图", "Make ${curMonth}M Poster"),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            maxLines = 1
+                                        )
+                                    }
+                                    FilledTonalButton(
+                                        onClick = {
+                                            view.tickHaptic(hapticEnabled, confirm = true)
+                                            viewModel.generatePosterNow(styleOverride = "year") { res ->
+                                                posterPreview = res
+                                                Toast.makeText(
+                                                    context,
+                                                    if (isEn) "Saved to Pictures/ClipBait & notified" else "已生成「${res.titleText}」存入相册并推送通知",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                                    ) {
+                                        Text(
+                                            text = tr("生成${curYear}年积分榜图", "Make ${curYear}Y Poster"),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(10.dp))
                         OutlinedButton(
                             onClick = {
@@ -921,6 +1122,143 @@ fun SettingsScreen(viewModel: MainViewModel) {
                         )
                         Spacer(modifier = Modifier.height(10.dp))
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        val updateCheckMode = config.settings.updateCheckMode
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = tr("版本更新检查", "Update Check"),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            if (updateCheckMode != "off") {
+                                FilledTonalButton(
+                                    onClick = {
+                                        view.tickHaptic(hapticEnabled, confirm = true)
+                                        viewModel.checkForUpdatesNow { res ->
+                                            res.onSuccess { info ->
+                                                val msg = if (info.hasUpdate) {
+                                                    if (isEn) "New version found: v${info.remoteVersionName}" else "发现新版本：v${info.remoteVersionName}"
+                                                } else {
+                                                    if (isEn) "Already up to date (v${AppInfo.VERSION_NAME})" else "当前已是最新版本 (v${AppInfo.VERSION_NAME})"
+                                                }
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            }.onFailure { e ->
+                                                Toast.makeText(
+                                                    context,
+                                                    if (isEn) "Update check failed: ${e.message}" else "检查更新失败：${e.message}",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        }
+                                    },
+                                    enabled = !isCheckingUpdate,
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(32.dp)
+                                ) {
+                                    Text(
+                                        text = if (isCheckingUpdate) {
+                                            tr("检查中...", "Checking...")
+                                        } else {
+                                            tr("检查更新", "Check Now")
+                                        },
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val updateModeOptions = listOf(
+                            "auto" to tr("自动检查", "Auto"),
+                            "manual" to tr("仅手动", "Manual"),
+                            "off" to tr("关闭", "Off")
+                        )
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            updateModeOptions.forEachIndexed { idx, (modeKey, modeLabel) ->
+                                SegmentedButton(
+                                    selected = updateCheckMode == modeKey,
+                                    onClick = {
+                                        view.tickHaptic(hapticEnabled)
+                                        viewModel.setUpdateCheckMode(modeKey)
+                                    },
+                                    shape = SegmentedButtonDefaults.itemShape(index = idx, count = updateModeOptions.size),
+                                    label = {
+                                        Text(
+                                            text = modeLabel,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            maxLines = 1
+                                        )
+                                    }
+                                )
+                            }
+                        }
+
+                        if (updateCheckMode != "off" && updateInfo != null) {
+                            val info = updateInfo!!
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (info.hasUpdate) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                                }
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = if (info.hasUpdate) {
+                                                tr("发现新版本 v${info.remoteVersionName}", "New version v${info.remoteVersionName} available")
+                                            } else {
+                                                tr("已是最新版本 (v${AppInfo.VERSION_NAME})", "Up to date (v${AppInfo.VERSION_NAME})")
+                                            },
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (info.hasUpdate) {
+                                                MaterialTheme.colorScheme.onPrimaryContainer
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            }
+                                        )
+                                        if (info.hasUpdate) {
+                                            FilledTonalButton(
+                                                onClick = {
+                                                    openUrlSafely(context, info.apkDownloadUrl ?: info.htmlUrl)
+                                                },
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                modifier = Modifier.height(30.dp)
+                                            ) {
+                                                Text(
+                                                    text = tr("下载更新", "Download"),
+                                                    style = MaterialTheme.typography.labelSmall
+                                                )
+                                            }
+                                        }
+                                    }
+                                    if (info.hasUpdate && info.releaseNotes.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            text = info.releaseNotes.take(260),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                         Spacer(modifier = Modifier.height(6.dp))
 
                         AboutLinkRow(
@@ -957,6 +1295,73 @@ fun SettingsScreen(viewModel: MainViewModel) {
                 }
             }
         }
+    }
+
+    posterPreview?.let { res ->
+        AlertDialog(
+            onDismissRequest = { posterPreview = null },
+            title = {
+                Text(
+                    text = res.titleText,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Image(
+                        bitmap = res.bitmap.asImageBitmap(),
+                        contentDescription = res.titleText,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp)),
+                        contentScale = ContentScale.FillWidth
+                    )
+                    Text(
+                        text = tr(
+                            "已保存至系统相册 Pictures/ClipBait/${res.fileName}，并已向状态栏发送图片通知。",
+                            "Saved to Pictures/ClipBait/${res.fileName} and posted to status bar."
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            },
+            confirmButton = {
+                if (res.savedUri != null) {
+                    FilledTonalButton(
+                        onClick = {
+                            try {
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "image/png"
+                                    putExtra(Intent.EXTRA_STREAM, res.savedUri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(
+                                    Intent.createChooser(
+                                        shareIntent,
+                                        if (isEn) "Share Standings Poster" else "分享积分榜战报图"
+                                    )
+                                )
+                            } catch (_: Exception) {
+                            }
+                        }
+                    ) {
+                        Text(tr("分享图片", "Share"))
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { posterPreview = null }) {
+                    Text(tr("关闭", "Close"))
+                }
+            }
+        )
     }
 }
 

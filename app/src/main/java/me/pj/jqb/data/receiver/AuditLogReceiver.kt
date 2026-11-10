@@ -224,11 +224,17 @@ class AuditLogReceiver : BroadcastReceiver() {
                     if (!forceTest && (now - lastToastTime) <= 2500L) return
                     lastToastTime = now
                     val msg = if (isEn) {
-                        val verbEn = if (actionType == "BLOCKED") "blocked" else "fed decoy"
-                        "ClipBait caught $appName reading clipboard ($verbEn)"
+                        if (actionType == "BLOCKED") {
+                            "ClipBait blocked $appName from reading the clipboard"
+                        } else {
+                            "ClipBait sent a decoy to $appName"
+                        }
                     } else {
-                        val verbZh = if (actionType == "BLOCKED") "已拦回空值" else "已塞假词糊弄"
-                        "ClipBait 抓现行：「$appName」刚偷摸剪贴板（$verbZh）"
+                        if (actionType == "BLOCKED") {
+                            "ClipBait：已阻断 $appName 读取剪贴板"
+                        } else {
+                            "ClipBait：已向 $appName 返回假内容"
+                        }
                     }
                     Handler(Looper.getMainLooper()).post {
                         Toast.makeText(
@@ -287,11 +293,11 @@ class AuditLogReceiver : BroadcastReceiver() {
             try {
                 val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    val channelName = if (isEn) "Clipboard Intercept Alerts" else "剪贴板抓现行实时通知"
+                    val channelName = if (isEn) "Clipboard Intercept Alerts" else "剪贴板拦截提醒"
                     val channelDesc = if (isEn) {
-                        "Notifies you whenever an app is caught snooping on your clipboard"
+                        "Notifies you when an app's clipboard read is intercepted"
                     } else {
-                        "当有应用偷读剪贴板被阻断或塞入假词时弹出通知提醒"
+                        "拦截应用读取剪贴板时发送通知"
                     }
                     val channel = NotificationChannel(
                         INTERCEPT_CHANNEL_ID,
@@ -305,37 +311,33 @@ class AuditLogReceiver : BroadcastReceiver() {
                 }
 
                 val title = if (isEn) {
-                    val verb = if (actionType == "BLOCKED") "Blocked" else "Fed Decoy"
-                    "Caught $appName reading clipboard · $verb"
+                    val verb = if (actionType == "BLOCKED") "Blocked" else "Spoofed"
+                    "$appName · $verb"
                 } else {
-                    val verb = if (actionType == "BLOCKED") "已拦回空值" else "已塞假词糊弄"
-                    "抓现行：「$appName」偷摸剪贴板 · $verb"
+                    val verb = if (actionType == "BLOCKED") "阻断" else "伪装"
+                    "$appName · $verb"
                 }
 
-                val shortSummary = if (isEn) {
-                    "$triggerText ($packageName)"
-                } else {
-                    "时机：$triggerText ($packageName)"
-                }
+                val shortSummary = "$triggerText ($packageName)"
 
                 val expandedBody = if (isEn) {
                     buildString {
-                        append("Scenario: $triggerText\n")
+                        append("Context: $triggerText\n")
                         append("Package: $packageName\n")
                         if (actionType == "BLOCKED") {
-                            append("Result: Returned empty clipboard")
+                            append("Action: Blocked")
                         } else if (!spoofedPayload.isNullOrBlank()) {
-                            append("Fed decoy: \"$spoofedPayload\"")
+                            append("Decoy: $spoofedPayload")
                         }
                     }
                 } else {
                     buildString {
-                        append("触发时机：$triggerText\n")
-                        append("应用包名：$packageName\n")
+                        append("场景：$triggerText\n")
+                        append("包名：$packageName\n")
                         if (actionType == "BLOCKED") {
-                            append("处置结果：已当场阻断并返回空剪贴板")
+                            append("处理：阻断")
                         } else if (!spoofedPayload.isNullOrBlank()) {
-                            append("投喂假词：「$spoofedPayload」")
+                            append("假内容：$spoofedPayload")
                         }
                     }
                 }

@@ -1150,11 +1150,17 @@ object SystemServerHook {
             if (!forceTest && (now - lastSystemToastTime) in 0..2500L) return true
             lastSystemToastTime = now
             val msg = if (isEn) {
-                val verbEn = if (action == "BLOCKED") "blocked" else "fed decoy"
-                "ClipBait caught $appName reading clipboard ($verbEn)"
+                if (action == "BLOCKED") {
+                    "ClipBait blocked $appName from reading the clipboard"
+                } else {
+                    "ClipBait sent a decoy to $appName"
+                }
             } else {
-                val verbZh = if (action == "BLOCKED") "已拦回空值" else "已塞假词糊弄"
-                "ClipBait 抓现行：「$appName」刚偷摸剪贴板（$verbZh）"
+                if (action == "BLOCKED") {
+                    "ClipBait：已阻断 $appName 读取剪贴板"
+                } else {
+                    "ClipBait：已向 $appName 返回假内容"
+                }
             }
             Handler(Looper.getMainLooper()).post {
                 try {
@@ -1172,40 +1178,40 @@ object SystemServerHook {
 
         val triggerText = triggerLabel(triggerCode, isEn)
         val title = if (isEn) {
-            "🛡️ ClipBait Intercept Alert"
+            "ClipBait intercept"
         } else {
-            "🛡️ ClipBait 抓现行系统提示"
+            "ClipBait 拦截提醒"
         }
         val body = if (isEn) {
             buildString {
                 append("App: $appName ($pkg)\n")
-                append("Behavior: $triggerText\n")
+                append("Context: $triggerText\n")
                 if (action == "BLOCKED") {
-                    append("Action: Blocked (returned empty clipboard)")
+                    append("Action: Blocked")
                 } else {
-                    append("Action: Spoofed with decoy phrase")
+                    append("Action: Spoofed")
                     if (!payload.isNullOrBlank()) {
                         val preview = if (payload.length > 60) payload.take(60) + "…" else payload
-                        append("\nDecoy: \"$preview\"")
+                        append("\nDecoy: $preview")
                     }
                 }
             }
         } else {
             buildString {
-                append("伸手应用：$appName ($pkg)\n")
-                append("触发时机：$triggerText\n")
+                append("应用：$appName ($pkg)\n")
+                append("场景：$triggerText\n")
                 if (action == "BLOCKED") {
-                    append("处置结果：已当场阻断并返回空剪贴板")
+                    append("处理：阻断")
                 } else {
-                    append("处置结果：已塞入伪装假词糊弄")
+                    append("处理：伪装")
                     if (!payload.isNullOrBlank()) {
                         val preview = if (payload.length > 60) payload.take(60) + "…" else payload
-                        append("\n投喂内容：「$preview」")
+                        append("\n假内容：$preview")
                     }
                 }
             }
         }
-        val btnText = if (isEn) "Got it" else "知道了"
+        val btnText = if (isEn) "OK" else "确定"
 
         val mainHandler = Handler(Looper.getMainLooper())
         mainHandler.post {

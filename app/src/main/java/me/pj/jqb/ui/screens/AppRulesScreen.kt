@@ -1,8 +1,6 @@
 package me.pj.jqb.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -27,10 +25,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.Clear
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
@@ -43,6 +45,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -65,6 +69,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -89,32 +94,77 @@ fun AppRulesScreen(viewModel: MainViewModel) {
     val smartDetectedApps by viewModel.smartDetectedApps.collectAsState()
     val isScanningSmart by viewModel.isScanningSmart.collectAsState()
     val hapticEnabled by viewModel.hapticEnabledState.collectAsState()
+    val config by viewModel.configState.collectAsState()
+    val globalDefaultAction = remember(config.settings.defaultAction) {
+        ActionType.fromKey(config.settings.defaultAction)
+    }
     val isEn = isEnglishLocale()
 
     var searchQuery by remember { mutableStateOf("") }
-    var filterConfiguredOnly by remember { mutableStateOf(false) }
+    var filterCustomOnly by remember { mutableStateOf(false) }
+    var filterAllowOnly by remember { mutableStateOf(false) }
     var hideSystemApps by remember { mutableStateOf(true) }
-    var showGuide by remember { mutableStateOf(false) }
+    var showGuideDialog by remember { mutableStateOf(false) }
+    var showGlobalDefaultPicker by remember { mutableStateOf(false) }
     var showSmartSheet by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
-    val configuredCount = remember(apps) {
-        apps.count { it.action != ActionType.DIRECT }
+    val customCount = remember(apps) {
+        apps.count { it.isCustomRule }
     }
 
-    val filteredApps = remember(apps, searchQuery, filterConfiguredOnly, hideSystemApps) {
+    val allowCount = remember(apps, hideSystemApps) {
+        apps.count { (!hideSystemApps || !it.isSystemApp) && it.action == ActionType.DIRECT }
+    }
+
+    val filteredApps = remember(apps, searchQuery, filterCustomOnly, filterAllowOnly, hideSystemApps) {
         apps.filter { item ->
             val matchQuery = searchQuery.isBlank() ||
                 item.appName.contains(searchQuery, ignoreCase = true) ||
                 item.packageName.contains(searchQuery, ignoreCase = true)
 
-            val matchConfigured = !filterConfiguredOnly || item.action != ActionType.DIRECT
+            val matchCustom = !filterCustomOnly || item.isCustomRule
+            val matchAllow = !filterAllowOnly || item.action == ActionType.DIRECT
             val matchSystem = !hideSystemApps || !item.isSystemApp
 
-            matchQuery && matchConfigured && matchSystem
+            matchQuery && matchCustom && matchAllow && matchSystem
         }
+    }
+
+    if (showGuideDialog) {
+        AlertDialog(
+            onDismissRequest = { showGuideDialog = false },
+            title = {
+                Text(
+                    text = tr("四档模式说明", "Mode Guide"),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ActionType.entries.forEach { action ->
+                        ModeHelpItem(title = action.label(isEn), desc = action.detail(isEn))
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = tr(
+                            "单独设置的应用优先按自己的规则处理，其余应用跟随全局默认。当前输入法始终放行。",
+                            "Custom rules override the global default; other apps follow the global default. Active input methods are always allowed."
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showGuideDialog = false }) {
+                    Text(tr("确定", "OK"))
+                }
+            }
+        )
     }
 
     if (showSmartSheet) {
@@ -136,11 +186,7 @@ fun AppRulesScreen(viewModel: MainViewModel) {
                     showSmartSheet = false
                     coroutineScope.launch {
                         snackbarHostState.showSnackbar(
-                            if (isEn) {
-                                "Applied rules to $count apps (live immediately, no reboot needed)"
-                            } else {
-                                "已给 $count 个应用套上规则，不用重启直接生效"
-                            }
+                            if (isEn) "Applied to $count apps" else "已应用到 $count 个应用"
                         )
                     }
                 }
@@ -158,26 +204,13 @@ fun AppRulesScreen(viewModel: MainViewModel) {
                     IconButton(
                         onClick = {
                             view.tickHaptic(hapticEnabled)
-                            showSmartSheet = true
-                            viewModel.scanDomesticApps()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.AutoFixHigh,
-                            contentDescription = tr("自动挑出嫌疑应用", "Auto-Detect Suspect Apps"),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            view.tickHaptic(hapticEnabled)
-                            showGuide = !showGuide
+                            showGuideDialog = true
                         }
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
-                            contentDescription = tr("四档模式有什么区别", "Mode Guide"),
-                            tint = if (showGuide) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                            contentDescription = tr("四档模式说明", "Mode Guide"),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },
@@ -192,43 +225,64 @@ fun AppRulesScreen(viewModel: MainViewModel) {
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Animated Mode Guide Card
-            AnimatedVisibility(
-                visible = showGuide,
-                enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
-            ) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer
-                    ),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+            // Global Default Row (ListItem, expands to 4-pill selector)
+            ListItem(
+                headlineContent = {
+                    Text(
+                        text = tr("全局默认", "Global default"),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                },
+                trailingContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = tr("这四档到底有什么区别？", "How the 4 Modes Work"),
-                            style = MaterialTheme.typography.titleMedium,
+                            text = globalDefaultAction.label(isEn),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.SemiBold
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        ActionType.entries.forEach { action ->
-                            ModeHelpItem(title = action.label(isEn), desc = action.detail(isEn))
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = tr(
-                                "小提示：系统已经把你的当前输入法（比如 Fcitx5 / Gboard）自动加进白名单了，用输入法自带的剪贴板粘贴永远不受影响。",
-                                "Tip: Your active input method (e.g. Fcitx5 / Gboard) is automatically whitelisted, so keyboard clipboard pasting always works."
-                            ),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = if (showGlobalDefaultPicker) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        view.tickHaptic(hapticEnabled)
+                        showGlobalDefaultPicker = !showGlobalDefaultPicker
+                    }
+            )
+
+            AnimatedVisibility(
+                visible = showGlobalDefaultPicker,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 8.dp)
+                ) {
+                    ActionPillSelector(
+                        selectedAction = globalDefaultAction,
+                        onActionSelected = { newDefault ->
+                            viewModel.setDefaultAction(newDefault)
+                        }
+                    )
                 }
             }
+
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+            )
 
             // Search Input
             OutlinedTextField(
@@ -262,7 +316,7 @@ fun AppRulesScreen(viewModel: MainViewModel) {
                 )
             )
 
-            // Filter Chips + Smart Classifier Trigger Chip (Scrollable to prevent cramped text wrapping)
+            // Filter Chips + Smart Classifier Trigger Chip
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -278,7 +332,7 @@ fun AppRulesScreen(viewModel: MainViewModel) {
                             showSmartSheet = true
                             viewModel.scanDomesticApps()
                         },
-                        label = { Text(tr("一键揪出毒瘤", "Auto-Detect")) },
+                        label = { Text(tr("智能识别", "Auto-detect")) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Outlined.AutoFixHigh,
@@ -296,12 +350,22 @@ fun AppRulesScreen(viewModel: MainViewModel) {
                 }
                 item {
                     FilterChip(
-                        selected = filterConfiguredOnly,
+                        selected = filterCustomOnly,
                         onClick = {
                             view.tickHaptic(hapticEnabled)
-                            filterConfiguredOnly = !filterConfiguredOnly
+                            filterCustomOnly = !filterCustomOnly
                         },
-                        label = { Text(tr("已设规矩 ($configuredCount)", "Configured ($configuredCount)")) }
+                        label = { Text(tr("单独设置 $customCount", "Custom $customCount")) }
+                    )
+                }
+                item {
+                    FilterChip(
+                        selected = filterAllowOnly,
+                        onClick = {
+                            view.tickHaptic(hapticEnabled)
+                            filterAllowOnly = !filterAllowOnly
+                        },
+                        label = { Text(tr("放行 $allowCount", "Allow $allowCount")) }
                     )
                 }
                 item {
@@ -311,7 +375,7 @@ fun AppRulesScreen(viewModel: MainViewModel) {
                             view.tickHaptic(hapticEnabled)
                             hideSystemApps = !hideSystemApps
                         },
-                        label = { Text(tr("不看系统应用", "Hide System")) }
+                        label = { Text(tr("隐藏系统应用", "Hide system")) }
                     )
                 }
             }
@@ -337,9 +401,9 @@ fun AppRulesScreen(viewModel: MainViewModel) {
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = tr("没找到对应的应用", "No matching apps found"),
+                            text = tr("没有匹配的应用", "No matching apps"),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.outline
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -347,7 +411,7 @@ fun AppRulesScreen(viewModel: MainViewModel) {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(
                         items = filteredApps,
@@ -356,8 +420,12 @@ fun AppRulesScreen(viewModel: MainViewModel) {
                     ) { appItem ->
                         AppRuleCard(
                             appItem = appItem,
+                            hapticEnabled = hapticEnabled,
                             onActionSelected = { newAction ->
                                 viewModel.setAppAction(appItem.packageName, newAction)
+                            },
+                            onResetToDefault = {
+                                viewModel.resetAppToGlobalDefault(appItem.packageName)
                             }
                         )
                     }
@@ -400,23 +468,23 @@ fun SmartClassifierBottomSheet(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = tr("自动挑出爱看剪贴板的应用", "Auto-Detect Clipboard Snoopers"),
+                        text = tr("智能识别", "Auto-detect"),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = tr(
-                            "按常见国内大厂包名和内置广告/统计 SDK 筛出来的名单，你可以挨个微调",
-                            "Matched against known package rules and embedded ad/tracking SDK signatures"
+                            "根据包名和内置 SDK 识别，可逐个调整。",
+                            "Matched by package name and embedded SDK signatures."
                         ),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.outline
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 if (!isScanning && items.isNotEmpty()) {
                     TextButton(onClick = { onSelectAll(!allSelected) }) {
-                        Text(if (allSelected) tr("全不选", "None") else tr("全选", "All"))
+                        Text(if (allSelected) tr("取消全选", "Deselect all") else tr("全选", "Select all"))
                     }
                 }
             }
@@ -436,9 +504,9 @@ fun SmartClassifierBottomSheet(
                         CircularProgressIndicator()
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = tr("正在翻看手机里装了哪些熟面孔...", "Scanning installed packages & SDKs..."),
+                            text = tr("正在扫描…", "Scanning…"),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.outline
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -450,9 +518,9 @@ fun SmartClassifierBottomSheet(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = tr("居然一个都没扫出来，你的手机比大多数人都干净", "Zero suspects found—your phone is remarkably clean"),
+                        text = tr("未发现需要处理的应用", "No apps found"),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.outline
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             } else {
@@ -478,7 +546,7 @@ fun SmartClassifierBottomSheet(
                                     MaterialTheme.colorScheme.surfaceContainerLowest
                                 }
                             ),
-                            shape = RoundedCornerShape(14.dp)
+                            shape = RoundedCornerShape(16.dp)
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Row(
@@ -509,7 +577,7 @@ fun SmartClassifierBottomSheet(
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Surface(
                                                 color = MaterialTheme.colorScheme.secondaryContainer,
-                                                shape = RoundedCornerShape(4.dp)
+                                                shape = RoundedCornerShape(6.dp)
                                             ) {
                                                 Text(
                                                     text = item.category,
@@ -521,8 +589,8 @@ fun SmartClassifierBottomSheet(
                                         }
                                         Text(
                                             text = item.reason,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.outline,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
@@ -550,7 +618,7 @@ fun SmartClassifierBottomSheet(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(tr("给这 $selectedCount 个应用套上规则", "Apply Rules to $selectedCount Apps"))
+                    Text(tr("应用到 $selectedCount 个应用", "Apply to $selectedCount apps"))
                 }
             }
         }
@@ -563,10 +631,12 @@ private val ActionBadgeShape = RoundedCornerShape(6.dp)
 @Composable
 fun AppRuleCard(
     appItem: AppItem,
+    hapticEnabled: Boolean = true,
     onActionSelected: (ActionType) -> Unit,
+    onResetToDefault: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val isEn = isEnglishLocale()
+    val view = LocalView.current
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -574,7 +644,7 @@ fun AppRuleCard(
         ),
         shape = AppRuleCardShape
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -601,37 +671,46 @@ fun AppRuleCard(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        if (appItem.action != ActionType.DIRECT) {
-                            Surface(
-                                shape = ActionBadgeShape,
-                                color = when (appItem.action) {
-                                    ActionType.SMART -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
-                                    ActionType.SPOOF -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.65f)
-                                    ActionType.BLOCK -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f)
-                                    else -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f)
-                                }
+                        if (appItem.isCustomRule) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                Text(
-                                    text = appItem.action.summary(isEn),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Medium,
-                                    color = when (appItem.action) {
-                                        ActionType.SMART -> MaterialTheme.colorScheme.onPrimaryContainer
-                                        ActionType.SPOOF -> MaterialTheme.colorScheme.onTertiaryContainer
-                                        ActionType.BLOCK -> MaterialTheme.colorScheme.onErrorContainer
-                                        else -> MaterialTheme.colorScheme.onSecondaryContainer
+                                Surface(
+                                    shape = ActionBadgeShape,
+                                    color = MaterialTheme.colorScheme.secondaryContainer
+                                ) {
+                                    Text(
+                                        text = tr("单独设置", "Custom"),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        view.tickHaptic(hapticEnabled)
+                                        onResetToDefault()
                                     },
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Outlined.Undo,
+                                        contentDescription = tr("恢复跟随全局", "Reset to global"),
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = appItem.packageName,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -657,7 +736,7 @@ fun ModeHelpItem(title: String, desc: String) {
         verticalAlignment = Alignment.Top
     ) {
         Surface(
-            shape = RoundedCornerShape(4.dp),
+            shape = RoundedCornerShape(6.dp),
             color = MaterialTheme.colorScheme.primaryContainer,
             modifier = Modifier.padding(top = 2.dp)
         ) {

@@ -66,10 +66,10 @@ object HallOfFamePosterGenerator {
 
         val subtitleText = if (isEn) {
             val cycleStr = if (intervalDays <= 0) "All-Time" else "Last ${intervalDays}d cycle"
-            "ClipBait Hall of Fame · $cycleStr"
+            "ClipBait Standings · $cycleStr"
         } else {
-            val cycleStr = if (intervalDays <= 0) "永久累计账本" else "最近 ${intervalDays} 天统计周期"
-            "ClipBait 抓现行战报 · $cycleStr"
+            val cycleStr = if (intervalDays <= 0) "累计统计" else "最近 ${intervalDays} 天统计周期"
+            "ClipBait 积分榜 · $cycleStr"
         }
 
         val bitmap = renderPosterBitmap(
@@ -158,7 +158,7 @@ object HallOfFamePosterGenerator {
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         canvas.drawText(
-            if (isEn) "🛡️ CLIPBAIT ZERO-TRUST REPORT" else "🛡️ CLIPBAIT 零信任抓现行战报",
+            if (isEn) "CLIPBAIT STANDINGS REPORT" else "CLIPBAIT 剪贴板积分榜",
             98f,
             112f,
             textPaint
@@ -187,20 +187,20 @@ object HallOfFamePosterGenerator {
         val cardWidth = (width - 144f - cardGap * 2f) / 3f
 
         val topOffenderName = offenders.firstOrNull()?.appName
-            ?: if (isEn) "None" else "暂无惯犯"
+            ?: if (isEn) "None" else "暂无记录"
         val kpis = listOf(
             Triple(
-                if (isEn) "TOTAL CAUGHT" else "累计抓现行",
+                if (isEn) "TOTAL INTERCEPTS" else "累计拦截",
                 if (isEn) "$totalCount" else "${totalCount}次",
                 Color.parseColor("#6FF7D4")
             ),
             Triple(
-                if (isEn) "OFFENDERS" else "上榜惯犯",
+                if (isEn) "APPS" else "上榜应用",
                 if (isEn) "${offenders.size} apps" else "${offenders.size}款",
                 Color.parseColor("#FFD580")
             ),
             Triple(
-                if (isEn) "#1 SNOOPER" else "头号惯犯",
+                if (isEn) "#1 APP" else "榜首应用",
                 ellipsizeText(topOffenderName, 7),
                 Color.parseColor("#FF8E80")
             )
@@ -240,7 +240,7 @@ object HallOfFamePosterGenerator {
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         canvas.drawText(
-            if (isEn) "TOP CLIPBOARD SNOOPERS" else "偷摸剪贴板积分榜前六名",
+            if (isEn) "TOP CLIPBOARD STANDINGS" else "剪贴板读取积分榜前六名",
             72f,
             564f,
             textPaint
@@ -262,7 +262,7 @@ object HallOfFamePosterGenerator {
                 typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
             }
             canvas.drawText(
-                if (isEn) "No apps caught snooping during this period!" else "本周期内天下太平，暂未抓到偷摸剪贴板的应用",
+                if (isEn) "No intercepts recorded during this period" else "本周期内暂无拦截记录",
                 120f,
                 startY + 112f,
                 textPaint
@@ -399,19 +399,17 @@ object HallOfFamePosterGenerator {
     private fun buildPosterRoastTag(index: Int, count: Int, isEn: Boolean): String {
         if (isEn) {
             return when {
-                index == 0 && count >= 30 -> "Supreme Clipboard Goblin"
-                index == 0 -> "#1 Clipboard Snooper"
-                count >= 20 -> "Relentless Harvester"
-                else -> "Caught Snooping"
+                index == 0 -> "P1 Leader"
+                index == 1 -> "P2 Runner-up"
+                index == 2 -> "P3 Podium"
+                else -> "Points Scorer"
             }
         }
         return when {
-            index == 0 && count >= 30 -> "剪贴板头号大盗"
-            index == 0 -> "榜首伸手惯犯"
-            index == 1 -> "日夜全勤摸兜王"
-            index == 2 -> "顺手牵羊老熟人"
-            count >= 15 -> "高频翻兜选手"
-            else -> "抓现行记录在案"
+            index == 0 -> "积分榜领跑"
+            index == 1 -> "积分榜次席"
+            index == 2 -> "积分榜第三"
+            else -> "积分区完赛"
         }
     }
 
@@ -526,7 +524,7 @@ object HallOfFamePosterGenerator {
 
             val notification = NotificationCompat.Builder(context, POSTER_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_stat_clipbait)
-                .setContentTitle(if (isEn) "📊 $titleText Ready" else "📊 您的「$titleText」已生成")
+                .setContentTitle(if (isEn) "$titleText Ready" else "$titleText 已生成")
                 .setContentText(summary)
                 .setLargeIcon(bitmap)
                 .setStyle(

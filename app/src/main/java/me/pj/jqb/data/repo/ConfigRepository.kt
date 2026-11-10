@@ -30,6 +30,23 @@ class ConfigRepository(private val context: Context) {
     private val _configState = MutableStateFlow(loadConfig())
     val configState: StateFlow<ConfigModel> = _configState.asStateFlow()
 
+    private val decoyUndoStack = ArrayDeque<List<String>>()
+    private val _canUndoDecoy = MutableStateFlow(false)
+    val canUndoDecoyState: StateFlow<Boolean> = _canUndoDecoy.asStateFlow()
+
+    private fun recordDecoyUndoSnapshot(current: ConfigModel, decoyId: String) {
+        val currentPool = current.decoys.firstOrNull { it.id == decoyId }?.pool ?: return
+        synchronized(decoyUndoStack) {
+            if (decoyUndoStack.lastOrNull() != currentPool) {
+                if (decoyUndoStack.size >= 30) {
+                    decoyUndoStack.removeFirst()
+                }
+                decoyUndoStack.addLast(currentPool)
+                _canUndoDecoy.value = decoyUndoStack.isNotEmpty()
+            }
+        }
+    }
+
     fun getConfig(): ConfigModel = _configState.value
 
     fun getRawConfigJson(): String {
@@ -67,8 +84,13 @@ class ConfigRepository(private val context: Context) {
                         decoy
                     }
                 }
-                val finalConfig = if (migratedDecoys != loaded.decoys) {
-                    loaded.copy(decoys = migratedDecoys).also { saveConfigInternal(it) }
+                val normalizedSettings = if (loaded.settings.updateCheckMode == "off") {
+                    loaded.settings.copy(updateCheckMode = "manual")
+                } else {
+                    loaded.settings
+                }
+                val finalConfig = if (migratedDecoys != loaded.decoys || normalizedSettings != loaded.settings) {
+                    loaded.copy(decoys = migratedDecoys, settings = normalizedSettings).also { saveConfigInternal(it) }
                 } else {
                     loaded
                 }
@@ -111,16 +133,24 @@ class ConfigRepository(private val context: Context) {
                 if (remainingPackages.isEmpty()) null else rule.copy(packageNames = remainingPackages)
             }.toMutableList()
 
-            if (action != ActionType.DIRECT) {
-                cleanedRules.add(
-                    RuleConfig(
-                        packageNames = listOf(packageName),
-                        action = action.key,
-                        decoyId = if (action == ActionType.SPOOF) (decoyId ?: "e_commerce_noise") else null,
-                        smartFallback = null,
-                        description = "用户自定义规则"
-                    )
+            cleanedRules.add(
+                RuleConfig(
+                    packageNames = listOf(packageName),
+                    action = action.key,
+                    decoyId = if (action == ActionType.SPOOF) (decoyId ?: "e_commerce_noise") else null,
+                    smartFallback = null,
+                    description = "用户自定义规则"
                 )
+            )
+            current.copy(rules = cleanedRules)
+        }
+    }
+
+    suspend fun resetAppToGlobalDefault(packageName: String) = withContext(Dispatchers.IO) {
+        updateConfig { current ->
+            val cleanedRules = current.rules.mapNotNull { rule ->
+                val remainingPackages = rule.packageNames.filterNot { it == packageName }
+                if (remainingPackages.isEmpty()) null else rule.copy(packageNames = remainingPackages)
             }
             current.copy(rules = cleanedRules)
         }
@@ -136,7 +166,6 @@ class ConfigRepository(private val context: Context) {
             }.toMutableList()
 
             val groupedByAction = actions.entries
-                .filter { it.value != ActionType.DIRECT }
                 .groupBy({ it.value }, { it.key })
 
             groupedByAction.forEach { (action, pkgs) ->
@@ -173,7 +202,7 @@ class ConfigRepository(private val context: Context) {
     }
 
     suspend fun setUpdateCheckMode(mode: String) = withContext(Dispatchers.IO) {
-        val valid = if (mode in setOf("auto", "manual", "off")) mode else "auto"
+        val valid = if (mode == "manual") "manual" else "auto"
         updateConfig { current ->
             current.copy(
                 settings = current.settings.copy(updateCheckMode = valid)
@@ -360,8 +389,19 @@ class ConfigRepository(private val context: Context) {
 
     suspend fun removeDecoyEntry(decoyId: String, entry: String) = withContext(Dispatchers.IO) {
         updateConfig { current ->
+            recordDecoyUndoSnapshot(current, decoyId)
             current.copy(decoys = current.decoys.map { decoy ->
                 if (decoy.id == decoyId) decoy.copy(pool = decoy.pool - entry) else decoy
+            })
+        }
+    }
+
+    suspend fun removeDecoyEntries(decoyId: String, entriesToRemove: Set<String>) = withContext(Dispatchers.IO) {
+        if (entriesToRemove.isEmpty()) return@withContext
+        updateConfig { current ->
+            recordDecoyUndoSnapshot(current, decoyId)
+            current.copy(decoys = current.decoys.map { decoy ->
+                if (decoy.id == decoyId) decoy.copy(pool = decoy.pool.filterNot { it in entriesToRemove }) else decoy
             })
         }
     }
@@ -369,6 +409,7 @@ class ConfigRepository(private val context: Context) {
     suspend fun resetDecoyPoolToDefault(decoyId: String) = withContext(Dispatchers.IO) {
         val defaultPool = defaultDecoys().firstOrNull { it.id == decoyId }?.pool ?: emptyList()
         updateConfig { current ->
+            recordDecoyUndoSnapshot(current, decoyId)
             current.copy(decoys = current.decoys.map { decoy ->
                 if (decoy.id == decoyId) decoy.copy(pool = defaultPool) else decoy
             })
@@ -378,6 +419,7 @@ class ConfigRepository(private val context: Context) {
     suspend fun appendDecoyEntries(decoyId: String, newEntries: List<String>) = withContext(Dispatchers.IO) {
         if (newEntries.isEmpty()) return@withContext
         updateConfig { current ->
+            recordDecoyUndoSnapshot(current, decoyId)
             val updatedDecoys = current.decoys.map { decoy ->
                 if (decoy.id == decoyId) {
                     decoy.copy(pool = (newEntries + decoy.pool).distinct())
@@ -387,6 +429,25 @@ class ConfigRepository(private val context: Context) {
             }
             current.copy(decoys = updatedDecoys)
         }
+    }
+
+    suspend fun undoLastDecoyChange(decoyId: String = "e_commerce_noise"): Boolean = withContext(Dispatchers.IO) {
+        val previousPool: List<String> = synchronized(decoyUndoStack) {
+            if (decoyUndoStack.isEmpty()) return@withContext false
+            val popped = decoyUndoStack.removeLast()
+            _canUndoDecoy.value = decoyUndoStack.isNotEmpty()
+            popped
+        }
+        updateConfig { current ->
+            current.copy(decoys = current.decoys.map { decoy ->
+                if (decoy.id == decoyId) decoy.copy(pool = previousPool) else decoy
+            })
+        }
+        true
+    }
+
+    fun hasCustomRule(packageName: String): Boolean {
+        return _configState.value.rules.any { it.packageNames.contains(packageName) }
     }
 
     fun getActionForPackage(packageName: String): ActionType {

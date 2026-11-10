@@ -59,7 +59,7 @@ sealed class NavDestination(
 ) {
     object WallOfShame : NavDestination("光荣榜", "Hall of Fame", Icons.Outlined.EmojiEvents, Icons.Filled.EmojiEvents)
     object AppRules : NavDestination("应用规则", "App Rules", Icons.Outlined.Tune, Icons.Filled.Tune)
-    object Config : NavDestination("伪装词库", "Decoy Pool", Icons.Outlined.Shuffle, Icons.Filled.Shuffle)
+    object Config : NavDestination("词库", "Decoy Pool", Icons.Outlined.Shuffle, Icons.Filled.Shuffle)
     object Settings : NavDestination("设置", "Settings", Icons.Outlined.Settings, Icons.Filled.Settings)
 
     fun title(isEn: Boolean): String = if (isEn) titleEn else titleZh

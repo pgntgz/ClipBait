@@ -54,6 +54,12 @@ interface AuditDao {
     @Query("UPDATE audit_records SET appName = :realAppName WHERE packageName = :pkg AND (appName = :pkg OR appName = '')")
     suspend fun fixLegacyAppName(pkg: String, realAppName: String)
 
+    @Query("DELETE FROM audit_records WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM audit_records WHERE packageName = :pkg")
+    suspend fun deleteByPackage(pkg: String)
+
     @Query("DELETE FROM audit_records WHERE timestamp < :timestamp")
     suspend fun deleteOlderThan(timestamp: Long): Int
 

@@ -20,37 +20,37 @@ enum class ActionType(
         key = "direct",
         label = "放行",
         labelEn = "Allow",
-        summary = "不管",
+        summary = "不限制",
         summaryEn = "Unrestricted",
-        detail = "跟没装 ClipBait 一样。",
-        detailEn = "Behaves as if ClipBait isn't installed."
+        detail = "不做任何处理。",
+        detailEn = "No restrictions."
     ),
     SMART(
         key = "smart",
         label = "智能",
         labelEn = "Smart",
-        summary = "你粘贴才给",
+        summary = "仅手动粘贴",
         summaryEn = "Only when you paste",
-        detail = "你自己点粘贴，照常能用。它一打开就读、或者躲在后台读，拿到的是空的。微信、QQ 这种还得正常聊天的，选这个。",
-        detailEn = "Manual paste works normally. Reads triggered automatically on app launch or in the background get blocked or spoofed. Ideal for chat apps."
+        detail = "手动粘贴正常可用，其他时候的读取会被拦截。适合聊天类应用。",
+        detailEn = "Manual paste works normally; automatic reads on launch or in background are intercepted. Suitable for chat apps."
     ),
     SPOOF(
         key = "spoof",
         label = "伪装",
         labelEn = "Spoof",
-        summary = "给它假的",
-        summaryEn = "Feed decoys",
-        detail = "不管什么时候读，都给它一段随机的假文字。它以为读到了，其实什么也没拿到。注意：你自己在里面粘贴，也会变成假的。",
-        detailEn = "Every clipboard read receives a random decoy phrase from your pool. Note: manual pasting inside this app will also paste the decoy."
+        summary = "返回假内容",
+        summaryEn = "Return decoys",
+        detail = "每次读取都返回词库里的假内容。手动粘贴也会变成假内容。",
+        detailEn = "Every read returns a random decoy phrase from your pool. Manual paste also receives the decoy."
     ),
     BLOCK(
         key = "block",
         label = "阻断",
         labelEn = "Block",
-        summary = "什么都不给",
+        summary = "始终为空",
         summaryEn = "Always empty",
-        detail = "不管什么时候读，都是空的，也收不到「剪贴板变了」的通知。你自己在里面也粘贴不了。",
-        detailEn = "Always returns an empty clipboard and silences clipboard-change listeners. Manual pasting inside this app is also blocked."
+        detail = "每次读取都返回空，也不会收到剪贴板变化通知。手动粘贴不可用。",
+        detailEn = "Always returns empty and blocks clipboard change listeners. Manual paste is disabled."
     );
 
     fun label(isEn: Boolean): String = if (isEn) labelEn else label
@@ -78,74 +78,74 @@ enum class TriggerType(
 ) {
     CONTEXT_MENU_PASTE(
         "context_menu",
-        "长按菜单粘贴",
-        "Context Menu Paste",
-        "你长按输入框点了粘贴。",
-        "You long-pressed an input field and tapped Paste.",
+        "菜单粘贴",
+        "Menu paste",
+        "通过长按菜单粘贴。",
+        "Pasted from the context menu.",
         true
     ),
     USER_CLICK(
         "user_click",
-        "点了粘贴按钮",
-        "Paste Button Click",
-        "你点了应用里的粘贴按钮。",
-        "You tapped an in-app paste button.",
+        "按钮粘贴",
+        "Button paste",
+        "点击了应用内的粘贴按钮。",
+        "Tapped an in-app paste button.",
         true
     ),
     TOUCH_WINDOW(
         "touch_window",
-        "刚碰过屏幕",
-        "Recent Touch",
-        "读取发生在你刚刚点过屏幕之后。",
-        "Read happened right after a screen touch event.",
+        "触摸后读取",
+        "Read after touch",
+        "读取发生在触摸屏幕后不久。",
+        "Read occurred shortly after a touch event.",
         true
     ),
     LIFECYCLE_RESUME(
         "lifecycle_resume",
-        "一打开就读",
-        "Read on Launch/Resume",
-        "应用刚切到前台，你还什么都没点，它就先去读了剪贴板。这是最常见的偷看方式。",
-        "The app read your clipboard immediately upon coming to the foreground before you touched anything.",
+        "启动时读取",
+        "Read on launch",
+        "应用切到前台后、未进行任何操作前读取。",
+        "Read immediately upon entering foreground before any user interaction.",
         false
     ),
     WINDOW_FOCUS(
         "window_focus",
-        "切回来就读",
-        "Read on Window Focus",
-        "窗口一拿到焦点就去读了。",
-        "Read triggered the instant the window gained focus.",
+        "获得焦点时读取",
+        "Read on focus",
+        "窗口获得焦点时立即读取。",
+        "Read as soon as the window gained focus.",
         false
     ),
     FOREGROUND_POLL(
         "foreground_poll",
-        "前台无粘贴偷读",
-        "Unsolicited Foreground Probe",
-        "虽然你正在用这个应用（比如点输入框打字或发消息），但你根本没长按或点粘贴菜单，它却趁机去摸了剪贴板。",
-        "You were using the app (e.g. typing or tapping the input box), but it probed the clipboard without a paste action.",
+        "前台主动读取",
+        "Foreground read",
+        "应用在前台，但没有粘贴操作时读取。",
+        "Read while in foreground without any paste action.",
         false
     ),
     BACKGROUND_SILENT(
         "background_silent",
-        "躲在后台读",
-        "Silent Background Read",
-        "你根本没在用它，它在后台（或者某个推送进程里）读的。",
-        "You weren't even using the app—it read the clipboard from the background or a push subprocess.",
+        "后台读取",
+        "Background read",
+        "应用在后台或子进程中读取。",
+        "Read from the background or a subprocess.",
         false
     ),
     ASYNC_POLL(
         "async_poll",
-        "连着读了好几次",
-        "Rapid Burst Polling",
-        "很短时间里反复读，像是在定时检查。",
-        "Repeatedly polled the clipboard in a short burst.",
+        "连续读取",
+        "Burst reads",
+        "短时间内多次读取。",
+        "Polled the clipboard repeatedly in a short interval.",
         false
     ),
     UNKNOWN(
         "unknown",
-        "读剪贴板",
-        "Clipboard Read",
-        "读了剪贴板，没法判断是什么场景。",
-        "Read the clipboard under an unclassified context.",
+        "未知场景",
+        "Unknown",
+        "无法判断读取场景。",
+        "Read under an unclassified context.",
         false
     );
 

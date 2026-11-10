@@ -49,7 +49,8 @@ data class AppItem(
     val packageName: String,
     val appName: String,
     val isSystemApp: Boolean,
-    val action: ActionType
+    val action: ActionType,
+    val isCustomRule: Boolean = false
 )
 
 @Immutable
@@ -81,6 +82,7 @@ class MainViewModel : ViewModel() {
 
     val configState: StateFlow<ConfigModel> = configRepo.configState
     val hookState: StateFlow<HookState> = app.hookState
+    val canUndoDecoyState: StateFlow<Boolean> = configRepo.canUndoDecoyState
 
     val hapticEnabledState: StateFlow<Boolean> = configState
         .map { it.settings.auditLog.hapticEnabled }
@@ -166,15 +168,15 @@ class MainViewModel : ViewModel() {
 
             val detail = if (isEn) {
                 when {
-                    usageMin == 0 && bgHits > 0 -> "0m foreground · ${stat.count} bg reads"
-                    usageMin == 0 -> "Brief open · ${stat.count} reads"
+                    usageMin == 0 && bgHits > 0 -> "Background reads: ${stat.count}"
+                    usageMin == 0 -> "Reads: ${stat.count}"
                     else -> "Used ${usageMin}m · ${stat.count} reads"
                 }
             } else {
                 when {
-                    usageMin == 0 && bgHits > 0 -> "前台 0 分钟 · 后台偷摸 ${stat.count} 次"
-                    usageMin == 0 -> "短暂停留 · 伸手 ${stat.count} 次"
-                    else -> "用 ${usageMin} 分钟 · 偷摸 ${stat.count} 次"
+                    usageMin == 0 && bgHits > 0 -> "后台读取 ${stat.count} 次"
+                    usageMin == 0 -> "读取 ${stat.count} 次"
+                    else -> "使用 ${usageMin} 分钟 · 读取 ${stat.count} 次"
                 }
             }
 
@@ -242,10 +244,8 @@ class MainViewModel : ViewModel() {
     fun setUpdateCheckMode(mode: String) {
         viewModelScope.launch {
             configRepo.setUpdateCheckMode(mode)
-            if (mode == "off") {
-                _updateInfo.value = null
-            } else if (mode == "auto" && _updateInfo.value == null) {
-                checkForUpdatesNow( null)
+            if (mode == "auto" && _updateInfo.value == null) {
+                checkForUpdatesNow(null)
             }
         }
     }
@@ -399,16 +399,19 @@ class MainViewModel : ViewModel() {
                 AppIconCache.cacheLabel(appInfo.packageName, label)
 
                 val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                val action = ruleMap[appInfo.packageName] ?: defaultAction
+                val explicitAction = ruleMap[appInfo.packageName]
+                val action = explicitAction ?: defaultAction
+                val isCustom = explicitAction != null
 
                 AppItem(
                     packageName = appInfo.packageName,
                     appName = label,
                     isSystemApp = isSystem,
-                    action = action
+                    action = action,
+                    isCustomRule = isCustom
                 )
             }.sortedWith(
-                compareBy<AppItem> { it.action == ActionType.DIRECT }
+                compareBy<AppItem> { !it.isCustomRule }
                     .thenBy { it.isSystemApp }
                     .thenBy { it.appName.lowercase() }
             )
@@ -418,12 +421,12 @@ class MainViewModel : ViewModel() {
 
             // Pre-warm icons for all user apps first, then system apps in background so long scrolling never stutters
             for (item in items) {
-                if (!item.isSystemApp || item.action != ActionType.DIRECT) {
+                if (!item.isSystemApp || item.isCustomRule) {
                     AppIconCache.loadIconAsync(app, item.packageName)
                 }
             }
             for (item in items) {
-                if (item.isSystemApp && item.action == ActionType.DIRECT) {
+                if (item.isSystemApp && !item.isCustomRule) {
                     AppIconCache.loadIconAsync(app, item.packageName)
                 }
             }
@@ -434,11 +437,25 @@ class MainViewModel : ViewModel() {
         return configRepo.getActionForPackage(packageName)
     }
 
+    fun hasCustomRule(packageName: String): Boolean {
+        return configRepo.hasCustomRule(packageName)
+    }
+
     fun setAppAction(packageName: String, action: ActionType) {
         viewModelScope.launch {
             configRepo.setAppAction(packageName, action)
             _installedApps.value = _installedApps.value.map {
-                if (it.packageName == packageName) it.copy(action = action) else it
+                if (it.packageName == packageName) it.copy(action = action, isCustomRule = true) else it
+            }
+        }
+    }
+
+    fun resetAppToGlobalDefault(packageName: String) {
+        viewModelScope.launch {
+            configRepo.resetAppToGlobalDefault(packageName)
+            val defaultAction = ActionType.fromKey(configRepo.getConfig().settings.defaultAction)
+            _installedApps.value = _installedApps.value.map {
+                if (it.packageName == packageName) it.copy(action = defaultAction, isCustomRule = false) else it
             }
         }
     }
@@ -670,6 +687,31 @@ class MainViewModel : ViewModel() {
     fun removeDecoyEntry(decoyId: String, entry: String) {
         viewModelScope.launch {
             configRepo.removeDecoyEntry(decoyId, entry)
+        }
+    }
+
+    fun removeDecoyEntries(decoyId: String, entries: Set<String>) {
+        viewModelScope.launch {
+            configRepo.removeDecoyEntries(decoyId, entries)
+        }
+    }
+
+    fun undoLastDecoyChange(decoyId: String = "e_commerce_noise", onResult: ((Boolean) -> Unit)? = null) {
+        viewModelScope.launch {
+            val ok = configRepo.undoLastDecoyChange(decoyId)
+            onResult?.invoke(ok)
+        }
+    }
+
+    fun deleteAuditRecord(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.deleteById(id)
+        }
+    }
+
+    fun deleteAuditRecordsForPackage(packageName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.deleteByPackage(packageName)
         }
     }
 

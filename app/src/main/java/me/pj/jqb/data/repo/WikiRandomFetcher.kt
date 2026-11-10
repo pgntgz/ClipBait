@@ -24,56 +24,56 @@ enum class DecoySourceType(
         id = "wiki_lucky",
         title = "维基百科",
         titleEn = "Wikipedia",
-        subtitle = "随机抽正经百科词条（不截断全文摘要）",
-        subtitleEn = "Random Wikipedia article summary (full extract)",
+        subtitle = "随机百科词条摘要",
+        subtitleEn = "Random Wikipedia article summary",
         isOnline = true
     ),
     UNCYCLOPEDIA(
         id = "uncyclopedia",
         title = "伪基大典",
         titleEn = "Uncyclopedia",
-        subtitle = "一本正经胡说八道的恶搞百科",
-        subtitleEn = "Satirical encyclopedia of deadpan nonsense",
+        subtitle = "恶搞百科词条",
+        subtitleEn = "Satirical encyclopedia entries",
         isOnline = true
     ),
     CHOUXIANG_WORLD(
         id = "chouxiang_world",
         title = "抽象世界",
         titleEn = "Chouxiang World",
-        subtitle = "从 chouxiang.world 抽抽象语录与怪话",
-        subtitleEn = "Absurd copypastas & memes from chouxiang.world",
+        subtitle = "chouxiang.world 随机语录",
+        subtitleEn = "Random quotes from chouxiang.world",
         isOnline = true
     ),
     WILD_PHILOSOPHY(
         id = "wild_philosophy",
         title = "弱智吧暴论",
-        titleEn = "Shower Thoughts & Paradoxes",
-        subtitle = "看似通顺实则离谱的灵魂发问",
-        subtitleEn = "Grammatically sound yet deeply unhinged questions",
+        titleEn = "Shower Thoughts",
+        subtitle = "弱智吧风格问句",
+        subtitleEn = "Absurd paradox questions",
         isOnline = false
     ),
     FAKE_SHARE_TOKEN(
         id = "fake_share_token",
         title = "假淘口令",
         titleEn = "Fake Share Tokens",
-        subtitle = "生成查无此物的电商/短视频乱码分享串",
-        subtitleEn = "Synthetic e-commerce share tokens that lead nowhere",
+        subtitle = "无效的电商分享口令",
+        subtitleEn = "Invalid e-commerce share tokens",
         isOnline = false
     ),
     NONSENSE_LITERATURE(
         id = "nonsense_literature",
         title = "废话文学",
-        titleEn = "Tautology & Nonsense",
-        subtitle = "听君一席话，如听一席话",
-        subtitleEn = "Every sixty seconds in Africa, a minute passes",
+        titleEn = "Tautology",
+        subtitle = "废话文学句子",
+        subtitleEn = "Circular tautology sentences",
         isOnline = false
     ),
     DEV_PANIC_TRAP(
         id = "dev_panic_trap",
         title = "假报错栈",
         titleEn = "Fake Stack Traces",
-        subtitle = "伪造崩溃日志给对面程序员提提神",
-        subtitleEn = "Synthetic crash logs to jumpscare telemetry parsers",
+        subtitle = "伪造的崩溃日志",
+        subtitleEn = "Synthetic crash stack traces",
         isOnline = false
     )
 }
@@ -422,7 +422,7 @@ object WikiRandomFetcher {
         val prefixNum = listOf("7.0", "8.9", "4.2", "9.7", "6.4", "3.8", "5.5").random()
         val templates = listOf(
             "$prefixNum￥${token}￥ https://m.tb.cn/h.$shortCode CZ0001 我分享给你了一个超值宝贝【$item】，快来看看吧",
-            "8👈￥${token}￥ https://m.tb.cn/h.$shortCode HU7632 复製这段话打开App，查看【$item】",
+            "8.0￥${token}￥ https://m.tb.cn/h.$shortCode HU7632 复製这段话打开App，查看【$item】",
             "【京东】https://3.cn/-$shortCode 「$item」点击链接直接打开 或者复制整段描述 ${token} 李姐万岁",
             "5.82 复制打开抖音，看看【硬核手工耿的作品】$item https://v.douyin.com/$shortCode/ $token"
         )

@@ -35,7 +35,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build APK (Clean Cloud Build)
-        run: ./gradlew assembleDebug --stacktrace --info
+        run: ./gradlew assembleRelease --stacktrace --info
 
       - name: Prepare APK Asset & Compute SHA-256
         id: prepare_asset
@@ -46,7 +46,7 @@ jobs:
           fi
           mkdir -p dist
           APK_FILE="dist/ClipBait-${TAG_NAME}.apk"
-          cp app/build/outputs/apk/debug/app-debug.apk "$APK_FILE"
+          cp app/build/outputs/apk/release/app-release.apk "$APK_FILE"
           SHA256_HASH=$(sha256sum "$APK_FILE" | awk '{print $1}')
           echo "$SHA256_HASH  ClipBait-${TAG_NAME}.apk" > "${APK_FILE}.sha256"
           echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT

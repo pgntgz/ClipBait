@@ -193,6 +193,79 @@ class ConfigRepository(private val context: Context) {
         }
     }
 
+    suspend fun setBypassCrossDeviceSync(enabled: Boolean) = withContext(Dispatchers.IO) {
+        updateConfig { current ->
+            current.copy(
+                settings = current.settings.copy(bypassCrossDeviceSync = enabled)
+            )
+        }
+    }
+
+    suspend fun setProtectionPaused(paused: Boolean) = withContext(Dispatchers.IO) {
+        updateConfig { current ->
+            current.copy(
+                settings = current.settings.copy(protectionPaused = paused)
+            )
+        }
+    }
+
+    suspend fun resetAllCustomRules() = withContext(Dispatchers.IO) {
+        updateConfig { current ->
+            current.copy(rules = emptyList())
+        }
+    }
+
+    suspend fun setThemeMode(mode: String) = withContext(Dispatchers.IO) {
+        val valid = if (mode in setOf("system", "light", "dark")) mode else "system"
+        updateConfig { current ->
+            current.copy(
+                settings = current.settings.copy(themeMode = valid)
+            )
+        }
+    }
+
+    suspend fun setAmoledBlack(enabled: Boolean) = withContext(Dispatchers.IO) {
+        updateConfig { current ->
+            current.copy(
+                settings = current.settings.copy(amoledBlack = enabled)
+            )
+        }
+    }
+
+    suspend fun setDynamicColor(enabled: Boolean) = withContext(Dispatchers.IO) {
+        updateConfig { current ->
+            current.copy(
+                settings = current.settings.copy(dynamicColor = enabled)
+            )
+        }
+    }
+
+    suspend fun setColorSeed(seed: String) = withContext(Dispatchers.IO) {
+        val valid = if (seed in setOf("teal", "blue", "violet", "amber", "rose")) seed else "teal"
+        updateConfig { current ->
+            current.copy(
+                settings = current.settings.copy(colorSeed = valid)
+            )
+        }
+    }
+
+    suspend fun setSwipeNavigationEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
+        updateConfig { current ->
+            current.copy(
+                settings = current.settings.copy(swipeNavigationEnabled = enabled)
+            )
+        }
+    }
+
+    suspend fun setPageTransitionStyle(style: String) = withContext(Dispatchers.IO) {
+        val valid = if (style in setOf("snappy", "smooth", "none")) style else "snappy"
+        updateConfig { current ->
+            current.copy(
+                settings = current.settings.copy(pageTransitionStyle = valid)
+            )
+        }
+    }
+
     suspend fun setLanguage(language: String) = withContext(Dispatchers.IO) {
         updateConfig { current ->
             current.copy(

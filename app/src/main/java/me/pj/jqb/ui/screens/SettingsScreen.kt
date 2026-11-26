@@ -10,9 +10,17 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -25,6 +33,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -32,6 +41,7 @@ import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Celebration
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -41,10 +51,13 @@ import androidx.compose.material.icons.outlined.HourglassTop
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.PauseCircle
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Shuffle
+import androidx.compose.material.icons.outlined.Swipe
 import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialog
@@ -97,6 +110,7 @@ import me.pj.jqb.ui.MainViewModel
 import me.pj.jqb.ui.components.PosterGenerationResult
 import me.pj.jqb.ui.components.tickHaptic
 import me.pj.jqb.ui.isEnglishLocale
+import me.pj.jqb.ui.theme.AppColorSeed
 import me.pj.jqb.ui.tr
 import java.util.Calendar
 
@@ -155,8 +169,11 @@ fun SettingsScreen(viewModel: MainViewModel) {
         ) {
             // 1. Module Status Card
             item {
-                val isOk = hookState == HookState.ACTIVE
-                val isWarn = hookState == HookState.NEEDS_REBOOT || hookState == HookState.CHECKING
+                val isPaused = config.settings.protectionPaused
+                val isOk = hookState == HookState.ACTIVE && !isPaused
+                val isWarn = (hookState == HookState.ACTIVE && isPaused) ||
+                    hookState == HookState.NEEDS_REBOOT ||
+                    hookState == HookState.CHECKING
                 val containerColor = when {
                     isOk -> MaterialTheme.colorScheme.primaryContainer
                     isWarn -> MaterialTheme.colorScheme.tertiaryContainer
@@ -167,32 +184,38 @@ fun SettingsScreen(viewModel: MainViewModel) {
                     isWarn -> MaterialTheme.colorScheme.onTertiaryContainer
                     else -> MaterialTheme.colorScheme.onErrorContainer
                 }
-                val statusIcon = when (hookState) {
-                    HookState.ACTIVE -> Icons.Outlined.CheckCircle
-                    HookState.CHECKING -> Icons.Outlined.HourglassTop
-                    HookState.NEEDS_REBOOT -> Icons.Outlined.RestartAlt
-                    HookState.INACTIVE -> Icons.Outlined.Warning
+                val statusIcon = when {
+                    hookState == HookState.ACTIVE && isPaused -> Icons.Outlined.PauseCircle
+                    hookState == HookState.ACTIVE -> Icons.Outlined.CheckCircle
+                    hookState == HookState.CHECKING -> Icons.Outlined.HourglassTop
+                    hookState == HookState.NEEDS_REBOOT -> Icons.Outlined.RestartAlt
+                    else -> Icons.Outlined.Warning
                 }
-                val titleText = when (hookState) {
-                    HookState.ACTIVE -> tr("正在运行", "Active")
-                    HookState.CHECKING -> tr("正在检测...", "Checking...")
-                    HookState.NEEDS_REBOOT -> tr("待重启生效", "Reboot Required")
-                    HookState.INACTIVE -> tr("未激活", "Inactive")
+                val titleText = when {
+                    hookState == HookState.ACTIVE && isPaused -> tr("保护已暂停", "Protection Paused")
+                    hookState == HookState.ACTIVE -> tr("正在运行", "Active")
+                    hookState == HookState.CHECKING -> tr("正在检测...", "Checking...")
+                    hookState == HookState.NEEDS_REBOOT -> tr("待重启生效", "Reboot Required")
+                    else -> tr("未激活", "Inactive")
                 }
-                val bodyText = when (hookState) {
-                    HookState.ACTIVE -> tr(
+                val bodyText = when {
+                    hookState == HookState.ACTIVE && isPaused -> tr(
+                        "已临时放行所有应用，原有规则与统计均保留。",
+                        "All apps are temporarily bypassed; rules remain preserved."
+                    )
+                    hookState == HookState.ACTIVE -> tr(
                         "已挂载到系统服务，修改规则实时生效。",
                         "Hooked into system_server. Rule changes take effect immediately."
                     )
-                    HookState.CHECKING -> tr(
+                    hookState == HookState.CHECKING -> tr(
                         "正在检测系统服务连接状态...",
                         "Checking connection to system_server..."
                     )
-                    HookState.NEEDS_REBOOT -> tr(
+                    hookState == HookState.NEEDS_REBOOT -> tr(
                         "请确认勾选「系统框架 (android)」并重启手机。",
                         "Ensure 'System Framework (android)' is checked in scope and reboot."
                     )
-                    HookState.INACTIVE -> tr(
+                    else -> tr(
                         "请在 LSPosed 中启用模块，仅勾选「系统框架 (android)」并重启。",
                         "Enable module in LSPosed with only 'System Framework' checked, then reboot."
                     )
@@ -228,17 +251,32 @@ fun SettingsScreen(viewModel: MainViewModel) {
                                 color = contentColor
                             )
                         }
-                        IconButton(
-                            onClick = {
-                                view.tickHaptic(hapticEnabled)
-                                viewModel.recheckHookState()
+                        if (hookState == HookState.ACTIVE && isPaused) {
+                            TextButton(
+                                onClick = {
+                                    view.tickHaptic(hapticEnabled, confirm = true)
+                                    viewModel.setProtectionPaused(false)
+                                }
+                            ) {
+                                Text(
+                                    text = tr("恢复", "Resume"),
+                                    color = contentColor,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Refresh,
-                                contentDescription = tr("刷新状态", "Refresh Status"),
-                                tint = contentColor
-                            )
+                        } else {
+                            IconButton(
+                                onClick = {
+                                    view.tickHaptic(hapticEnabled)
+                                    viewModel.recheckHookState()
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Refresh,
+                                    contentDescription = tr("刷新状态", "Refresh Status"),
+                                    tint = contentColor
+                                )
+                            }
                         }
                     }
                 }
@@ -297,6 +335,46 @@ fun SettingsScreen(viewModel: MainViewModel) {
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                        )
+
+                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            SettingSwitchRow(
+                                title = tr("暂停剪贴板拦截", "Pause Interception"),
+                                subtitle = tr(
+                                    "开启后临时放行所有应用，保留现有规则不变。",
+                                    "Temporarily allow all apps while keeping configured rules."
+                                ),
+                                checked = config.settings.protectionPaused,
+                                onCheckedChange = {
+                                    view.tickHaptic(hapticEnabled)
+                                    viewModel.setProtectionPaused(it)
+                                }
+                            )
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                        )
+
+                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            SettingSwitchRow(
+                                title = tr("放行系统跨设备同步", "Allow Cross-Device Sync"),
+                                subtitle = tr(
+                                    "自动放行小米互联、OPPO/vivo/华为/三星等跨设备剪贴板同步服务。",
+                                    "Bypass Xiaomi HyperConnect, OPPO/vivo/Huawei/Samsung sync services."
+                                ),
+                                checked = config.settings.bypassCrossDeviceSync,
+                                onCheckedChange = {
+                                    view.tickHaptic(hapticEnabled)
+                                    viewModel.setBypassCrossDeviceSync(it)
+                                }
+                            )
+                        }
 
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 16.dp),
@@ -649,6 +727,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
                         if (favoriteEnabled && !hasUsagePermission) {
                             Spacer(modifier = Modifier.height(8.dp))
                             OutlinedButton(
+                                modifier = Modifier.fillMaxWidth(),
                                 onClick = {
                                     try {
                                         context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
@@ -699,6 +778,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
 
                         Spacer(modifier = Modifier.height(12.dp))
                         Surface(
+                            modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
                             color = MaterialTheme.colorScheme.surfaceContainerHigh
                         ) {
@@ -845,6 +925,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
 
                         Spacer(modifier = Modifier.height(10.dp))
                         OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
                             onClick = {
                                 view.tickHaptic(hapticEnabled)
                                 showClearConfirm = true
@@ -870,6 +951,13 @@ fun SettingsScreen(viewModel: MainViewModel) {
             item {
                 SectionHeader(tr("界面", "Interface"))
                 val currentLang = config.settings.language
+                val themeMode = config.settings.themeMode
+                val amoledBlack = config.settings.amoledBlack
+                val dynamicColor = config.settings.dynamicColor
+                val colorSeed = config.settings.colorSeed
+                val swipeEnabled = config.settings.swipeNavigationEnabled
+                val transitionStyle = config.settings.pageTransitionStyle
+
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -878,6 +966,195 @@ fun SettingsScreen(viewModel: MainViewModel) {
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Outlined.Palette,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = tr("主题模式", "Theme Mode"),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val themeOptions = listOf(
+                            "system" to tr("跟随系统", "System"),
+                            "light" to tr("浅色", "Light"),
+                            "dark" to tr("深色", "Dark")
+                        )
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            themeOptions.forEachIndexed { index, (modeKey, label) ->
+                                SegmentedButton(
+                                    modifier = Modifier.weight(1f),
+                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = themeOptions.size),
+                                    selected = themeMode == modeKey,
+                                    onClick = {
+                                        view.tickHaptic(hapticEnabled)
+                                        viewModel.setThemeMode(modeKey)
+                                    },
+                                    label = { Text(label, maxLines = 1) }
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        SettingSwitchRow(
+                            title = tr("纯黑深色模式", "AMOLED Pure Black"),
+                            subtitle = tr("深色模式下背景与底栏使用纯黑，适合 OLED 屏幕。", "Use pure black backgrounds in dark mode for OLED displays."),
+                            checked = amoledBlack,
+                            onCheckedChange = {
+                                view.tickHaptic(hapticEnabled)
+                                viewModel.setAmoledBlack(it)
+                            }
+                        )
+
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            SettingSwitchRow(
+                                title = tr("动态取色", "Dynamic Color"),
+                                subtitle = tr("跟随系统壁纸自动配色，关闭后可选内置主题色。", "Generate colors from wallpaper; disable to pick a preset palette."),
+                                checked = dynamicColor,
+                                onCheckedChange = {
+                                    view.tickHaptic(hapticEnabled)
+                                    viewModel.setDynamicColor(it)
+                                }
+                            )
+                        }
+
+                        AnimatedVisibility(
+                            visible = !dynamicColor || Build.VERSION.SDK_INT < Build.VERSION_CODES.S,
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut()
+                        ) {
+                            Column {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = tr("主题色板", "Accent Palette"),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    AppColorSeed.entries.forEach { seed ->
+                                        val isSelected = colorSeed == seed.key
+                                        Column(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .clickable {
+                                                    view.tickHaptic(hapticEnabled)
+                                                    viewModel.setColorSeed(seed.key)
+                                                }
+                                                .padding(vertical = 4.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(34.dp)
+                                                    .clip(CircleShape)
+                                                    .background(seed.previewColor)
+                                                    .then(
+                                                        if (isSelected) {
+                                                            Modifier.border(
+                                                                2.5.dp,
+                                                                MaterialTheme.colorScheme.onSurface,
+                                                                CircleShape
+                                                            )
+                                                        } else {
+                                                            Modifier
+                                                        }
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (isSelected) {
+                                                    Icon(
+                                                        imageVector = Icons.Outlined.Check,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(18.dp),
+                                                        tint = Color.White
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = seed.label(isEn),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                color = if (isSelected) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                                },
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        SettingToggleRow(
+                            icon = Icons.Outlined.Swipe,
+                            title = tr("滑动切换页面", "Swipe Between Tabs"),
+                            subtitle = tr("允许在主界面左右滑动切换底部标签页。", "Allow horizontal swipe gestures to switch bottom tabs."),
+                            checked = swipeEnabled,
+                            onCheckedChange = {
+                                view.tickHaptic(hapticEnabled)
+                                viewModel.setSwipeNavigationEnabled(it)
+                            }
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = tr("翻页动画", "Page Transition"),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val transitionOptions = listOf(
+                            "snappy" to tr("利落", "Snappy"),
+                            "smooth" to tr("柔和", "Smooth"),
+                            "none" to tr("无动画", "Instant")
+                        )
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            transitionOptions.forEachIndexed { index, (styleKey, label) ->
+                                SegmentedButton(
+                                    modifier = Modifier.weight(1f),
+                                    shape = SegmentedButtonDefaults.itemShape(index = index, count = transitionOptions.size),
+                                    selected = transitionStyle == styleKey,
+                                    onClick = {
+                                        view.tickHaptic(hapticEnabled)
+                                        viewModel.setPageTransitionStyle(styleKey)
+                                    },
+                                    label = { Text(label, maxLines = 1) }
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                        Spacer(modifier = Modifier.height(12.dp))
+
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Outlined.Language,
@@ -1076,6 +1353,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
                             val info = updateInfo!!
                             Spacer(modifier = Modifier.height(10.dp))
                             Surface(
+                                modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(10.dp),
                                 color = if (info.hasUpdate) {
                                     MaterialTheme.colorScheme.primaryContainer

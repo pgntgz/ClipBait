@@ -9,6 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,7 +22,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,14 +34,14 @@ import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -85,7 +86,7 @@ import me.pj.jqb.ui.components.tickHaptic
 import me.pj.jqb.ui.isEnglishLocale
 import me.pj.jqb.ui.tr
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AppRulesScreen(viewModel: MainViewModel) {
     val view = LocalView.current
@@ -107,6 +108,7 @@ fun AppRulesScreen(viewModel: MainViewModel) {
     var showGuideDialog by remember { mutableStateOf(false) }
     var showGlobalDefaultPicker by remember { mutableStateOf(false) }
     var showSmartSheet by remember { mutableStateOf(false) }
+    var showResetAllConfirm by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -167,6 +169,44 @@ fun AppRulesScreen(viewModel: MainViewModel) {
         )
     }
 
+    if (showResetAllConfirm) {
+        AlertDialog(
+            onDismissRequest = { showResetAllConfirm = false },
+            title = { Text(tr("恢复全部应用为全局默认？", "Reset all apps to global default?")) },
+            text = {
+                Text(
+                    tr(
+                        "将清除 $customCount 个单独设置的规则，所有应用将跟随当前全局默认模式。",
+                        "This clears all $customCount custom rules so every app follows the global default."
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        view.tickHaptic(hapticEnabled, confirm = true)
+                        viewModel.resetAllCustomRules()
+                        showResetAllConfirm = false
+                        filterCustomOnly = false
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar(
+                                if (isEn) "All custom rules cleared" else "已全部恢复跟随全局"
+                            )
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text(tr("确认恢复", "Reset"))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetAllConfirm = false }) {
+                    Text(tr("取消", "Cancel"))
+                }
+            }
+        )
+    }
+
     if (showSmartSheet) {
         SmartClassifierBottomSheet(
             items = smartDetectedApps,
@@ -201,6 +241,29 @@ fun AppRulesScreen(viewModel: MainViewModel) {
             TopAppBar(
                 title = { Text(tr("应用规则", "App Rules"), style = MaterialTheme.typography.titleLarge) },
                 actions = {
+                    FilledTonalButton(
+                        onClick = {
+                            view.tickHaptic(hapticEnabled)
+                            showSmartSheet = true
+                            viewModel.scanDomesticApps()
+                        },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.AutoFixHigh,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = tr("智能识别", "Auto-detect"),
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
                     IconButton(
                         onClick = {
                             view.tickHaptic(hapticEnabled)
@@ -264,7 +327,7 @@ fun AppRulesScreen(viewModel: MainViewModel) {
                 enter = expandVertically() + fadeIn(),
                 exit = shrinkVertically() + fadeOut()
             ) {
-                Box(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
@@ -276,6 +339,33 @@ fun AppRulesScreen(viewModel: MainViewModel) {
                             viewModel.setDefaultAction(newDefault)
                         }
                     )
+                    if (customCount > 0) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    view.tickHaptic(hapticEnabled)
+                                    showResetAllConfirm = true
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Outlined.Undo,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = tr("全部恢复跟随全局 ($customCount)", "Reset all custom ($customCount)"),
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -316,68 +406,37 @@ fun AppRulesScreen(viewModel: MainViewModel) {
                 )
             )
 
-            // Filter Chips + Smart Classifier Trigger Chip
-            LazyRow(
+            // Filter Chips (fits cleanly without horizontal clipping)
+            FlowRow(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                item {
-                    AssistChip(
-                        onClick = {
-                            view.tickHaptic(hapticEnabled)
-                            showSmartSheet = true
-                            viewModel.scanDomesticApps()
-                        },
-                        label = { Text(tr("智能识别", "Auto-detect")) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Outlined.AutoFixHigh,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
-                            labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        ),
-                        border = null
-                    )
-                }
-                item {
-                    FilterChip(
-                        selected = filterCustomOnly,
-                        onClick = {
-                            view.tickHaptic(hapticEnabled)
-                            filterCustomOnly = !filterCustomOnly
-                        },
-                        label = { Text(tr("单独设置 $customCount", "Custom $customCount")) }
-                    )
-                }
-                item {
-                    FilterChip(
-                        selected = filterAllowOnly,
-                        onClick = {
-                            view.tickHaptic(hapticEnabled)
-                            filterAllowOnly = !filterAllowOnly
-                        },
-                        label = { Text(tr("放行 $allowCount", "Allow $allowCount")) }
-                    )
-                }
-                item {
-                    FilterChip(
-                        selected = hideSystemApps,
-                        onClick = {
-                            view.tickHaptic(hapticEnabled)
-                            hideSystemApps = !hideSystemApps
-                        },
-                        label = { Text(tr("隐藏系统应用", "Hide system")) }
-                    )
-                }
+                FilterChip(
+                    selected = filterCustomOnly,
+                    onClick = {
+                        view.tickHaptic(hapticEnabled)
+                        filterCustomOnly = !filterCustomOnly
+                    },
+                    label = { Text(tr("单独设置 $customCount", "Custom $customCount"), maxLines = 1) }
+                )
+                FilterChip(
+                    selected = filterAllowOnly,
+                    onClick = {
+                        view.tickHaptic(hapticEnabled)
+                        filterAllowOnly = !filterAllowOnly
+                    },
+                    label = { Text(tr("放行 $allowCount", "Allow $allowCount"), maxLines = 1) }
+                )
+                FilterChip(
+                    selected = hideSystemApps,
+                    onClick = {
+                        view.tickHaptic(hapticEnabled)
+                        hideSystemApps = !hideSystemApps
+                    },
+                    label = { Text(tr("隐藏系统", "Hide system"), maxLines = 1) }
+                )
             }
 
             if (isLoading) {

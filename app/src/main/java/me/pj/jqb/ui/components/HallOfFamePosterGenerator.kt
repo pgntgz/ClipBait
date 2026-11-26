@@ -22,6 +22,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import me.pj.jqb.AppInfo
 import me.pj.jqb.R
 import me.pj.jqb.data.db.AppInterceptStat
@@ -115,7 +116,7 @@ object HallOfFamePosterGenerator {
     ): Bitmap {
         val width = 1080
         val rowCount = offenders.size.coerceAtLeast(1)
-        val height = (760 + rowCount * 156).coerceAtLeast(1260)
+        val height = (750 + rowCount * 156).coerceAtLeast(1260)
 
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -126,63 +127,95 @@ object HallOfFamePosterGenerator {
         paint.shader = LinearGradient(
             0f, 0f, width.toFloat(), height.toFloat(),
             intArrayOf(
-                Color.parseColor("#0B1714"),
-                Color.parseColor("#0F221D"),
-                Color.parseColor("#091310")
+                Color.parseColor("#0A1613"),
+                Color.parseColor("#0F231E"),
+                Color.parseColor("#08120F")
             ),
-            floatArrayOf(0f, 0.5f, 1f),
+            floatArrayOf(0f, 0.52f, 1f),
             Shader.TileMode.CLAMP
         )
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
         paint.shader = null
 
-        // Decorative glowing header orb
+        // Header atmospheric glow banner
         val orbPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             shader = LinearGradient(
-                0f, 0f, width.toFloat(), 420f,
-                Color.parseColor("#244FD8B6"),
+                0f, 40f, width.toFloat(), 440f,
+                Color.parseColor("#2A4FD8B6"),
                 Color.parseColor("#004FD8B6"),
                 Shader.TileMode.CLAMP
             )
         }
-        canvas.drawRoundRect(RectF(40f, 40f, width - 40f, 420f), 44f, 44f, orbPaint)
+        canvas.drawRoundRect(RectF(44f, 40f, width - 44f, 440f), 40f, 40f, orbPaint)
 
-        // 2. Top Pill Badge
-        val badgeRect = RectF(72f, 76f, 480f, 130f)
+        // Crisp subtle frame outline inside the poster edge
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2f
+        paint.color = Color.parseColor("#1B3830")
+        canvas.drawRoundRect(RectF(36f, 36f, width - 36f, height - 36f), 40f, 40f, paint)
+        paint.style = Paint.Style.FILL
+
+        // 2. App Logo + Brand Pill + Main Title
+        val logoSize = 104
+        val logoLeft = 72f
+        val logoTop = 74f
+        val logoRect = RectF(logoLeft, logoTop, logoLeft + logoSize, logoTop + logoSize)
+        val selfLogo = loadSelfLogoBitmap(context, logoSize)
+        if (selfLogo != null) {
+            val saveCount = canvas.save()
+            val clipPath = Path().apply {
+                addRoundRect(logoRect, 26f, 26f, Path.Direction.CW)
+            }
+            canvas.clipPath(clipPath)
+            canvas.drawBitmap(selfLogo, logoLeft, logoTop, null)
+            canvas.restoreToCount(saveCount)
+        } else {
+            paint.color = Color.parseColor("#1D3B33")
+            canvas.drawRoundRect(logoRect, 26f, 26f, paint)
+        }
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 3f
+        paint.color = Color.parseColor("#4FD8B6")
+        canvas.drawRoundRect(logoRect, 26f, 26f, paint)
+        paint.style = Paint.Style.FILL
+
+        val badgeLeft = 200f
+        val badgeText = if (isEn) "CLIPBAIT STANDINGS" else "CLIPBAIT 剪贴板积分榜"
+        val badgeWidth = if (isEn) 356f else 376f
+        val badgeRect = RectF(badgeLeft, 76f, badgeLeft + badgeWidth, 122f)
         paint.color = Color.parseColor("#1D3B33")
-        canvas.drawRoundRect(badgeRect, 27f, 27f, paint)
+        canvas.drawRoundRect(badgeRect, 23f, 23f, paint)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 1.5f
+        paint.color = Color.parseColor("#35695C")
+        canvas.drawRoundRect(badgeRect, 23f, 23f, paint)
+        paint.style = Paint.Style.FILL
 
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#6FF7D4")
-            textSize = 26f
+            textSize = 24f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
-        canvas.drawText(
-            if (isEn) "CLIPBAIT STANDINGS REPORT" else "CLIPBAIT 剪贴板积分榜",
-            98f,
-            112f,
-            textPaint
-        )
+        canvas.drawText(badgeText, badgeLeft + 24f, 108f, textPaint)
 
-        // 3. Main Title & Subtitle
         textPaint.apply {
             color = Color.parseColor("#ECFFF9")
-            textSize = 64f
+            textSize = 52f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
-        canvas.drawText(titleText, 72f, 224f, textPaint)
+        canvas.drawText(titleText, badgeLeft, 178f, textPaint)
 
         val nowStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
         textPaint.apply {
             color = Color.parseColor("#8FB5AA")
-            textSize = 30f
+            textSize = 28f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
         }
-        canvas.drawText("$subtitleText · $nowStr", 72f, 276f, textPaint)
+        canvas.drawText("$subtitleText · $nowStr", 72f, 234f, textPaint)
 
         // 4. Three Summary KPI Cards
-        val kpiTop = 320f
-        val kpiBottom = 490f
+        val kpiTop = 276f
+        val kpiBottom = 446f
         val cardGap = 24f
         val cardWidth = (width - 144f - cardGap * 2f) / 3f
 
@@ -242,12 +275,12 @@ object HallOfFamePosterGenerator {
         canvas.drawText(
             if (isEn) "TOP CLIPBOARD STANDINGS" else "剪贴板读取积分榜前六名",
             72f,
-            564f,
+            518f,
             textPaint
         )
 
         // 6. Leaderboard Rows
-        val startY = 596f
+        val startY = 552f
         val rowHeight = 136f
         val rowGap = 20f
         val maxCount = (offenders.firstOrNull()?.count ?: 1).coerceAtLeast(1)
@@ -283,6 +316,16 @@ object HallOfFamePosterGenerator {
                     2 -> Color.parseColor("#F4A261") // Bronze
                     else -> Color.parseColor("#6FF7D4")
                 }
+
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = if (index == 0) 2.5f else 1.5f
+                paint.color = if (index <= 2) {
+                    Color.argb(90, Color.red(rankColor), Color.green(rankColor), Color.blue(rankColor))
+                } else {
+                    Color.parseColor("#1F3F36")
+                }
+                canvas.drawRoundRect(rowRect, 28f, 28f, paint)
+                paint.style = Paint.Style.FILL
 
                 // Rank badge pill on left
                 val rankBadgeRect = RectF(96f, top + 36f, 168f, top + 100f)
@@ -377,20 +420,56 @@ object HallOfFamePosterGenerator {
             }
         }
 
-        // 7. Footer Watermark
-        val footerY = height - 54f
+        // 7. Branded Footer with Logo Badge & GitHub Repo URL
+        val footerLineY = height - 126f
+        paint.color = Color.parseColor("#1F3F36")
+        canvas.drawRect(72f, footerLineY, width - 72f, footerLineY + 2f, paint)
+
+        val miniLogoSize = 44
+        val miniLogoLeft = 72f
+        val miniLogoTop = footerLineY + 24f
+        if (selfLogo != null) {
+            val scaledMini = Bitmap.createScaledBitmap(selfLogo, miniLogoSize, miniLogoSize, true)
+            val saveCount = canvas.save()
+            val clipPath = Path().apply {
+                addRoundRect(
+                    RectF(miniLogoLeft, miniLogoTop, miniLogoLeft + miniLogoSize, miniLogoTop + miniLogoSize),
+                    11f,
+                    11f,
+                    Path.Direction.CW
+                )
+            }
+            canvas.clipPath(clipPath)
+            canvas.drawBitmap(scaledMini, miniLogoLeft, miniLogoTop, null)
+            canvas.restoreToCount(saveCount)
+        }
+
+        val brandX = miniLogoLeft + miniLogoSize + 16f
         textPaint.apply {
-            color = Color.parseColor("#638C80")
+            color = Color.parseColor("#CFECE3")
+            textSize = 25f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.LEFT
+        }
+        canvas.drawText(
+            "${AppInfo.APP_NAME} v${AppInfo.VERSION_NAME}",
+            brandX,
+            miniLogoTop + 31f,
+            textPaint
+        )
+
+        textPaint.apply {
+            color = Color.parseColor("#6FF7D4")
             textSize = 24f
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
+            textAlign = Paint.Align.RIGHT
         }
-        val footerText = if (isEn) {
-            "Generated by ${AppInfo.APP_NAME} v${AppInfo.VERSION_NAME} · Open-Source Zero-Trust Clipboard Guard"
-        } else {
-            "由 ${AppInfo.APP_NAME} v${AppInfo.VERSION_NAME} 自动生成 · 开源零信任剪贴板守门员"
-        }
-        canvas.drawText(footerText, width / 2f, footerY, textPaint)
+        canvas.drawText(
+            "github.com/pgntgz/ClipBait",
+            width - 72f,
+            miniLogoTop + 31f,
+            textPaint
+        )
         textPaint.textAlign = Paint.Align.LEFT
 
         return bitmap
@@ -415,6 +494,20 @@ object HallOfFamePosterGenerator {
 
     private fun ellipsizeText(text: String, maxChars: Int): String {
         return if (text.length > maxChars) text.take(maxChars - 1) + "…" else text
+    }
+
+    private fun loadSelfLogoBitmap(context: Context, sizePx: Int): Bitmap? {
+        return try {
+            val drawable = ContextCompat.getDrawable(context, R.mipmap.ic_launcher)
+                ?: context.packageManager.getApplicationIcon(context.packageName)
+            val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+            val c = Canvas(bmp)
+            drawable.setBounds(0, 0, sizePx, sizePx)
+            drawable.draw(c)
+            bmp
+        } catch (_: Throwable) {
+            null
+        }
     }
 
     private fun loadAppIconBitmap(context: Context, packageName: String, sizePx: Int): Bitmap? {

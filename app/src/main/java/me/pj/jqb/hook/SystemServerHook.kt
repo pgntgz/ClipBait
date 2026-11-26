@@ -145,6 +145,27 @@ object SystemServerHook {
     // Cache of verified input method packages to unconditionally bypass
     private val imePackageSet = ConcurrentHashMap.newKeySet<String>()
 
+    // System cross-device clipboard sync services (Issue #3: Xiaomi HyperConnect, OPPO/vivo/Huawei/Samsung/Microsoft)
+    private val CROSS_DEVICE_SYNC_PACKAGES = setOf(
+        "com.milink.service",
+        "com.xiaomi.mirror",
+        "com.xiaomi.continuity",
+        "com.xiaomi.continuity.proxy",
+        "com.xiaomi.mi_connect_service",
+        "com.miui.mishare.connectivity",
+        "com.heytap.synergy",
+        "com.oplus.synergy",
+        "com.oplus.linker",
+        "com.vivo.easyshare",
+        "com.vivo.pcsuite",
+        "com.hihonor.synergy",
+        "com.huawei.dmsdp",
+        "com.huawei.harmonyos.interconnect",
+        "com.samsung.android.mdx",
+        "com.samsung.android.mdx.quickboard",
+        "com.microsoft.appmanager"
+    )
+
     // Holds pending audit records when the UI app process is closed/swiped from recents
     private val pendingAuditBuffer = ConcurrentHashMap<String, PendingAuditItem>()
     private const val MAX_PENDING_AUDITS = 500
@@ -1045,11 +1066,17 @@ object SystemServerHook {
     private var imeCacheTime = 0L
 
     private fun shouldBypassPackage(pkg: String): Boolean {
+        if (currentConfig.settings.protectionPaused) {
+            return true
+        }
         if (pkg == "android" ||
             pkg == "com.android.systemui" ||
             pkg == "io.github.pgntgz.clipbait" ||
             pkg == "me.pj.jqb"
         ) {
+            return true
+        }
+        if (currentConfig.settings.bypassCrossDeviceSync && pkg in CROSS_DEVICE_SYNC_PACKAGES) {
             return true
         }
         refreshImeCacheIfStale()

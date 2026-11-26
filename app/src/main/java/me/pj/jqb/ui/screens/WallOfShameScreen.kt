@@ -16,6 +16,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -47,6 +48,7 @@ import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Clear
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.DeleteSweep
@@ -57,11 +59,13 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.FlashOn
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.MilitaryTech
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Science
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -72,6 +76,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -80,6 +85,8 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -102,7 +109,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -121,6 +130,7 @@ import me.pj.jqb.ui.components.ActionPillSelector
 import me.pj.jqb.ui.components.AppIcon
 import me.pj.jqb.ui.components.AppIconCache
 import me.pj.jqb.ui.components.ConfettiCelebrationOverlay
+import me.pj.jqb.ui.components.PosterGenerationResult
 import me.pj.jqb.ui.components.tickHaptic
 import me.pj.jqb.ui.isEnglishLocale
 import me.pj.jqb.ui.tr
@@ -140,7 +150,9 @@ private val FULL_TIME_FORMATTER = ThreadLocal.withInitial {
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun WallOfShameScreen(viewModel: MainViewModel) {
+    val context = LocalContext.current
     val view = LocalView.current
+    val isEn = isEnglishLocale()
     val records by viewModel.auditRecords.collectAsState()
     val totalCount by viewModel.totalInterceptCount.collectAsState()
     val todayCount by viewModel.todayInterceptCount.collectAsState()
@@ -163,6 +175,9 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
     var confettiBurstTrigger by remember { mutableIntStateOf(0) }
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showClearAllConfirm by remember { mutableStateOf(false) }
+    var showSearchBar by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var posterPreview by remember { mutableStateOf<PosterGenerationResult?>(null) }
 
     val (blockedCount, spoofedCount) = remember(records) {
         var b = 0
@@ -174,11 +189,19 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
         b to s
     }
 
-    val filteredRecords = remember(records, selectedFilter) {
-        when (selectedFilter) {
+    val filteredRecords = remember(records, selectedFilter, searchQuery) {
+        val base = when (selectedFilter) {
             "BLOCKED" -> records.filter { it.action == "BLOCKED" }
             "SPOOFED" -> records.filter { it.action == "SPOOFED" }
             else -> records
+        }
+        if (searchQuery.isBlank()) {
+            base
+        } else {
+            base.filter {
+                it.appName.contains(searchQuery, ignoreCase = true) ||
+                    it.packageName.contains(searchQuery, ignoreCase = true)
+            }
         }
     }
 
@@ -217,6 +240,21 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
                         Text(tr("光荣榜", "Hall of Fame"), style = MaterialTheme.typography.titleLarge)
                     },
                     actions = {
+                        IconButton(
+                            onClick = {
+                                view.tickHaptic(hapticEnabled)
+                                if (showSearchBar) {
+                                    searchQuery = ""
+                                }
+                                showSearchBar = !showSearchBar
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Search,
+                                contentDescription = tr("搜索记录", "Search records"),
+                                tint = if (showSearchBar) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Box {
                             IconButton(
                                 onClick = {
@@ -254,6 +292,27 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
                                         view.tickHaptic(hapticEnabled)
                                         viewModel.setDeepAnalysisEnabled(!deepAnalysisEnabled)
                                         showOverflowMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(tr("生成积分榜图", "Generate standings poster")) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Image,
+                                            contentDescription = null
+                                        )
+                                    },
+                                    onClick = {
+                                        view.tickHaptic(hapticEnabled, confirm = true)
+                                        showOverflowMenu = false
+                                        viewModel.generatePosterNow { res ->
+                                            posterPreview = res
+                                            Toast.makeText(
+                                                context,
+                                                if (isEn) "Saved to Pictures/ClipBait" else "已保存「${res.titleText}」至相册",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
                                     }
                                 )
                                 DropdownMenuItem(
@@ -304,13 +363,52 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
                 )
             }
         ) { paddingValues ->
-            LazyColumn(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(paddingValues)
             ) {
+                AnimatedVisibility(
+                    visible = showSearchBar,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        placeholder = { Text(tr("搜应用名或包名...", "Search app or package name...")) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.Search,
+                                contentDescription = null
+                            )
+                        },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Clear,
+                                        contentDescription = tr("清除", "Clear")
+                                    )
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                        )
+                    )
+                }
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                 // 1. Animated Statistics Cards
                 item(key = "stats_header", contentType = "stats_header") {
                     Row(
@@ -480,6 +578,7 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
                     }
                 }
             }
+            }
         }
 
         // Celebratory Confetti Shower Overlay on Primary Screen
@@ -534,6 +633,73 @@ fun WallOfShameScreen(viewModel: MainViewModel) {
                 selectedRecordForSheet = null
                 selectedPackageForSheet = null
                 autoConfettiInSheet = false
+            }
+        )
+    }
+
+    posterPreview?.let { res ->
+        AlertDialog(
+            onDismissRequest = { posterPreview = null },
+            title = {
+                Text(
+                    text = res.titleText,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Image(
+                        bitmap = res.bitmap.asImageBitmap(),
+                        contentDescription = res.titleText,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp)),
+                        contentScale = ContentScale.FillWidth
+                    )
+                    Text(
+                        text = tr(
+                            "已保存至相册 Pictures/ClipBait/${res.fileName}。",
+                            "Saved to Pictures/ClipBait/${res.fileName}."
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                if (res.savedUri != null) {
+                    FilledTonalButton(
+                        onClick = {
+                            try {
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "image/png"
+                                    putExtra(Intent.EXTRA_STREAM, res.savedUri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(
+                                    Intent.createChooser(
+                                        shareIntent,
+                                        if (isEn) "Share Standings Poster" else "分享积分榜图"
+                                    )
+                                )
+                            } catch (_: Exception) {
+                            }
+                        }
+                    ) {
+                        Text(tr("分享图片", "Share"))
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { posterPreview = null }) {
+                    Text(tr("关闭", "Close"))
+                }
             }
         )
     }
@@ -1371,6 +1537,7 @@ fun AuditDetailBottomSheet(
 
                 // 2. Quick Rule Switcher
                 Card(
+                    modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer
                     ),
@@ -1509,6 +1676,7 @@ fun AuditDetailBottomSheet(
                     val fullTime = FULL_TIME_FORMATTER.get()?.format(Date(highlightedRecord.timestamp)) ?: ""
 
                     Card(
+                        modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainer
                         ),
@@ -1660,6 +1828,7 @@ fun AuditDetailBottomSheet(
 
                 // 5. App Historical Summary
                 Card(
+                    modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainer
                     ),
@@ -1667,16 +1836,25 @@ fun AuditDetailBottomSheet(
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text(
-                            text = tr(
-                                "历史记录 · 共 ${allRecordsForApp.size} 次",
-                                "History · ${allRecordsForApp.size} total"
-                            ),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = tr("历史记录", "History"),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = tr("共 ${allRecordsForApp.size} 次", "${allRecordsForApp.size} total"),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                         val resumeHits = allRecordsForApp.count {
                             TriggerType.fromCode(it.triggerReason) == TriggerType.LIFECYCLE_RESUME
                         }
@@ -1685,14 +1863,39 @@ fun AuditDetailBottomSheet(
                                 it.processName.contains(":")
                         }
                         val fgPollHits = (allRecordsForApp.size - resumeHits - bgHits).coerceAtLeast(0)
-                        Text(
-                            text = tr(
-                                "启动时 $resumeHits · 前台 $fgPollHits · 后台 $bgHits",
-                                "Launch $resumeHits · Foreground $fgPollHits · Background $bgHits"
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        val statColumns = listOf(
+                            tr("启动时", "Launch") to resumeHits,
+                            tr("前台", "Foreground") to fgPollHits,
+                            tr("后台", "Background") to bgHits
                         )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            statColumns.forEach { (label, count) ->
+                                Surface(
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                                ) {
+                                    Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = count.toString(),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1911,6 +2114,7 @@ fun HallOfShameQuickActionSheet(
 
             // 2. Quick Rule Switcher Card
             Card(
+                modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainer
                 ),
@@ -1989,6 +2193,7 @@ fun HallOfShameQuickActionSheet(
 
             // 3. Action List (MD3 ListItems inside a single Card)
             Card(
+                modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainer
                 ),

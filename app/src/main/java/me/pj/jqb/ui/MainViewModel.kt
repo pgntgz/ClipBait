@@ -8,6 +8,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Process
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.Stable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -74,6 +75,7 @@ data class FavoriteOffenderStat(
     val scoreDetail: String
 )
 
+@Stable
 class MainViewModel : ViewModel() {
 
     private val app = ClipBoxApp.instance
@@ -515,6 +517,61 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             configRepo.setDefaultAction(action)
             loadInstalledApps()
+        }
+    }
+
+    fun setBypassCrossDeviceSync(enabled: Boolean) {
+        viewModelScope.launch {
+            configRepo.setBypassCrossDeviceSync(enabled)
+        }
+    }
+
+    fun setProtectionPaused(paused: Boolean) {
+        viewModelScope.launch {
+            configRepo.setProtectionPaused(paused)
+        }
+    }
+
+    fun resetAllCustomRules() {
+        viewModelScope.launch {
+            configRepo.resetAllCustomRules()
+            loadInstalledApps()
+        }
+    }
+
+    fun setThemeMode(mode: String) {
+        viewModelScope.launch {
+            configRepo.setThemeMode(mode)
+        }
+    }
+
+    fun setAmoledBlack(enabled: Boolean) {
+        viewModelScope.launch {
+            configRepo.setAmoledBlack(enabled)
+        }
+    }
+
+    fun setDynamicColor(enabled: Boolean) {
+        viewModelScope.launch {
+            configRepo.setDynamicColor(enabled)
+        }
+    }
+
+    fun setColorSeed(seed: String) {
+        viewModelScope.launch {
+            configRepo.setColorSeed(seed)
+        }
+    }
+
+    fun setSwipeNavigationEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            configRepo.setSwipeNavigationEnabled(enabled)
+        }
+    }
+
+    fun setPageTransitionStyle(style: String) {
+        viewModelScope.launch {
+            configRepo.setPageTransitionStyle(style)
         }
     }
 

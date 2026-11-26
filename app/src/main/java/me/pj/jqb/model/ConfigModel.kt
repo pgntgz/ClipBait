@@ -33,6 +33,22 @@ data class SettingsConfig(
     val updateCheckMode: String = "auto",
     @SerialName("last_update_check_time")
     val lastUpdateCheckTime: Long = 0L,
+    @SerialName("bypass_cross_device_sync")
+    val bypassCrossDeviceSync: Boolean = true,
+    @SerialName("protection_paused")
+    val protectionPaused: Boolean = false,
+    @SerialName("theme_mode")
+    val themeMode: String = "system", // system | light | dark
+    @SerialName("amoled_black")
+    val amoledBlack: Boolean = false,
+    @SerialName("dynamic_color")
+    val dynamicColor: Boolean = true,
+    @SerialName("color_seed")
+    val colorSeed: String = "teal", // teal | blue | violet | amber | rose
+    @SerialName("swipe_navigation_enabled")
+    val swipeNavigationEnabled: Boolean = true,
+    @SerialName("page_transition_style")
+    val pageTransitionStyle: String = "snappy", // snappy | smooth | none
     @SerialName("smart_detect")
     val smartDetect: SmartDetectConfig = SmartDetectConfig(),
     @SerialName("audit_log")

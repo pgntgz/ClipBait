@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/pgntgz/ClipBait/main/assets/icon.png" width="112" height="112" alt="ClipBait" />
+</p>
+
 # ClipBait
 
 ClipBait是一开源的Xposed模块，为应对剪切板泄露而生，ClipBait喜欢给乱翻剪贴板的软件下点饵。他会在 system_server 底层拦截偷读行为并伪装返回假词、百科或直接掐灭。仅需勾选系统框架，规则与词库支持热更新。GUI设计遵循MD3设计体系。
